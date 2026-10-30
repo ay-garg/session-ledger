@@ -69,6 +69,12 @@ const main = async () => {
     }
     if (result.kind === "ignore") return
 
+    if (result.kind === "flush") {
+      if (!inScope(config, result.session.directory)) return
+      await flushPending(config, result.session)
+      return
+    }
+
     if (result.kind === "prompt") {
       if (!config.prompts || !inScope(config, result.session.directory)) return
       await record(result.session, result.entry, config)
@@ -137,7 +143,8 @@ const slot = (key) => key.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120)
 async function remember(config, result) {
   const dir = stateDir(config)
   await mkdir(dir, { recursive: true })
-  await writeFile(join(dir, `${slot(result.key)}.json`), JSON.stringify({ started: +result.started, harness: result.session.harness }), "utf8")
+  const pending = { started: +result.started, harness: result.session.harness, ...result.pending }
+  await writeFile(join(dir, `${slot(result.key)}.json`), JSON.stringify(pending), "utf8")
   await sweep(dir)
 }
 
@@ -149,6 +156,43 @@ async function forget(config, key) {
     return pending
   } catch {
     return null
+  }
+}
+
+// Some harnesses start a tool, never report its result, then end the turn — Codex
+// does this for apply_patch. Write what we saw rather than lose the call.
+async function flushPending(config, session) {
+  const dir = stateDir(config)
+  for (const name of await readdir(dir).catch(() => [])) {
+    const file = join(dir, name)
+    let pending
+    try {
+      pending = JSON.parse(await readFile(file, "utf8"))
+    } catch {
+      continue
+    }
+    if (pending.sessionId !== session.id) continue
+    await rm(file, { force: true })
+    if (pending.tool && !config.tools) continue
+
+    await record(
+      { ...session, started: new Date(pending.started), harness: pending.harness ?? session.harness },
+      {
+        kind: pending.command ? "command" : "tool",
+        id: pending.id ?? String(pending.started).slice(-8),
+        at: new Date(pending.started),
+        durationMs: null,
+        status: "unconfirmed",
+        command: pending.command ?? "",
+        tool: pending.tool,
+        input: pending.input,
+        inputTruncated: pending.inputTruncated,
+        cwd: pending.cwd ?? session.directory,
+        output: "",
+        truncated: 0,
+      },
+      config,
+    ).catch((error) => process.stderr.write(`[session-ledger] ${error?.message ?? error}\n`))
   }
 }
 

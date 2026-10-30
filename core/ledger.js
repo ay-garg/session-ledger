@@ -1,13 +1,13 @@
 // Shared vocabulary for a session ledger. No harness imports and no build step:
 // plain ESM so `node`, `bun` and any hook runner can load it as-is.
 
-export const VERSION = "0.3.0"
+export const VERSION = "0.4.0"
 export const SCHEMA = 1
 
 export const DEFAULT_MAX_OUTPUT = 20_000
 
 /**
- * @typedef {"completed" | "failed"} Status
+ * @typedef {"completed" | "failed" | "unconfirmed"} Status
  * @typedef {"command" | "tool" | "prompt"} Kind
  *
  * @typedef {object} Entry

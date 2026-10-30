@@ -8,14 +8,17 @@ const SHELL_TOOL = /^(bash|shell|exec_command|exec|powershell|terminal|sh|zsh)$/
 const START = /^(pre_?tool_?use|before_?shell_?execution|before_?mcp_?execution)$/i
 const END = /^(post_?tool_?use|post_?tool_?use_?failure|after_?shell_?execution|after_?mcp_?execution)$/i
 const PROMPT = /^(user_?prompt_?submit|before_?submit_?prompt)$/i
+// End of a turn: whatever started and never finished is as final as it gets.
+const TURN_END = /^(stop|session_?end)$/i
 
 /**
  * @param {Record<string, any>} payload
  * @param {{ now?: Date, maxOutput?: number, timezone?: string, harness?: string }} [options]
  * @returns {{ kind: "ignore" }
  *   | { kind: "prompt", session: object, entry: object }
- *   | { kind: "start", session: object, key: string, started: Date }
- *   | { kind: "end", session: object, key: string, entry: object }}
+ *   | { kind: "start", session: object, key: string, started: Date, pending: object }
+ *   | { kind: "end", session: object, key: string, entry: object }
+ *   | { kind: "flush", session: object }}
  */
 export function normalize(payload, options = {}) {
   const now = options.now ?? new Date()
@@ -61,6 +64,8 @@ export function normalize(payload, options = {}) {
     }
   }
 
+  if (TURN_END.test(event)) return { kind: "flush", session }
+
   if (!START.test(event) && !END.test(event)) return { kind: "ignore" }
 
   // A shell call: either the tool name says so, or a shell hook sent a bare
@@ -68,17 +73,34 @@ export function normalize(payload, options = {}) {
   const shell = command !== "" && (!toolName || SHELL_TOOL.test(toolName))
   if (!shell && toolName === "") return { kind: "ignore" }
 
-  const key = `${sessionID}:${firstString(raw.tool_use_id, raw.tool_call_id, raw.id, raw.generation_id) || `${toolName}:${pretty(input)}`.slice(0, 80)}`
+  const toolID = firstString(raw.tool_use_id, raw.tool_call_id, raw.id, raw.generation_id)
+  const key = `${sessionID}:${toolID || `${toolName}:${pretty(input)}`.slice(0, 80)}`
+  const args = shell ? null : clip(pretty(input), maxOutput)
 
   if (START.test(event)) {
-    return { kind: "start", session, key, started: now }
+    // Kept so a call that never reports back can still be written at turn end.
+    return {
+      kind: "start",
+      session,
+      key,
+      started: now,
+      pending: {
+        sessionId: sessionID,
+        id: entryID(toolID, now),
+        harness: session.harness,
+        command: shell ? command : "",
+        tool: shell ? undefined : toolName,
+        input: args?.body,
+        inputTruncated: args?.truncated,
+        cwd: base,
+      },
+    }
   }
 
   const failed = Boolean(/failure/i.test(event) || raw.error || raw.error_message || raw.failure_type)
   const reported = firstNumber(raw.duration_ms, raw.duration, raw.durationMs)
   const output = textOf(raw.tool_output ?? raw.tool_response ?? raw.output ?? raw.error_message ?? raw.error)
   const clipped = clip(output.trimEnd(), maxOutput)
-  const args = shell ? null : clip(pretty(input), maxOutput)
 
   return {
     kind: "end",

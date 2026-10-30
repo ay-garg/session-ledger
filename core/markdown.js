@@ -29,8 +29,8 @@ export function header(session) {
     "> [!TIP]",
     "> Append-only record of every prompt, command and tool call in this session, in order.",
     "> 💬 is a user prompt, a `bash` block is a shell command with its `text` output,",
-    "> and 🛠 is any other tool or MCP call with its input and output. Entry IDs are",
-    "> stable and never reused.",
+    "> 🛠 is any other tool or MCP call with its input and output, and ⚠️ marks a call",
+    "> whose result the harness never reported. Entry IDs are stable and never reused.",
     "",
     "---",
     "",
@@ -82,13 +82,14 @@ function promptEntry(e, session) {
 function headline(e, session, extra = "") {
   const at = parts(e.at, session.timezone)
   const tz = zoneName(session.timezone, e.at)
-  const mark = e.status === "failed" ? "❌" : "✅"
+  const mark = e.status === "failed" ? "❌" : e.status === "unconfirmed" ? "⚠️" : "✅"
   const where = e.cwd && e.cwd !== session.directory ? ` · \`${cell(e.cwd)}\`` : ""
 
   return `### ${mark} ${at.time} ${tz} · ${duration(e.durationMs)}${extra} · \`${e.id}\`${where}`
 }
 
 function outputOf(e) {
+  if (e.status === "unconfirmed") return "(no result reported by the harness — the turn ended before this call finished)"
   const printed = e.output.trim() === "" ? "(no output)" : e.output.replace(/\n+$/, "")
   return e.truncated > 0 ? `${printed}\n\n${note(e.truncated)}` : printed
 }

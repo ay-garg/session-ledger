@@ -172,3 +172,13 @@ test("output containing $& or $' cannot duplicate the html document", async () =
   assert.equal((html.match(/<!-- session-ledger:entries -->/g) ?? []).length, 1)
   assert.match(html, /echo \$&amp; \$'/) // still escaped, still shown
 })
+
+test("an unconfirmed call is marked ⚠️ and says why it has no output", () => {
+  const e = { ...entry, kind: "command", status: "unconfirmed", durationMs: null, output: "" }
+  const md = markdownEntry(e, session)
+  assert.match(md, /^### ⚠️ 21:00:05 IST · — · `a1b2c3d4`$/m)
+  assert.match(md, /no result reported by the harness/)
+  assert.match(card(e, session), /data-status="unconfirmed"/)
+  assert.match(card(e, session), /⚠ unconfirmed/)
+  assert.match(stats(card(e, session)), /1 unconfirmed/)
+})

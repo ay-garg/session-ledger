@@ -38,7 +38,7 @@ step — just `node` ≥ 18.
 | **Directory** | `/Users/ayush/claude-code` |
 | **Started** | 2026-10-30 21:09:16 IST |
 | **Timezone** | `Asia/Kolkata` · UTC+05:30 |
-| **Format** | session-ledger `0.3.0` · schema 1 |
+| **Format** | session-ledger `0.4.0` · schema 1 |
 
 ### 💬 21:09:14 IST · `msg_01H8`
 
@@ -292,7 +292,7 @@ the readable `stdout` text, and reads `duration` in milliseconds.
 ### Codex
 
 Copy [`adapters/codex/hooks.json`](adapters/codex/hooks.json) to
-`~/.codex/hooks.json` (or `<repo>/.codex/hooks.json`):
+`~/.codex/hooks.json` (or `<repo>/.codex/hooks.json`), replacing the path:
 
 ```json
 {
@@ -306,14 +306,31 @@ Copy [`adapters/codex/hooks.json`](adapters/codex/hooks.json) to
       { "matcher": "*", "hooks": [{ "type": "command", "timeout": 10,
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex" }] }
     ],
-    "PostToolUse": [ … same matcher and command … ]
+    "PostToolUse": [ … same matcher and command … ],
+    "Stop": [ … same command, no matcher … ]
   }
 }
 ```
 
-Codex requires non-managed hooks to be **reviewed and trusted** before they run:
-open `/hooks` in the CLI, inspect the definition, and trust it. Until you do,
-Codex skips the hook silently and prints a startup warning.
+`Stop` is not decoration: Codex fires `PreToolUse` for `apply_patch` but **never
+`PostToolUse`** for it, so a file edit would otherwise vanish from the record.
+At `Stop`, anything that started and never reported back is written with ⚠️ and
+its patch or command line, instead of being dropped.
+
+Verified live against Codex 0.165 with a custom provider profile
+(`codex --profile … exec`), including prompt, `Bash`, `apply_patch`, failed
+commands and turn end.
+
+**Codex requires hooks to be trusted before they run.** The first interactive
+launch shows a *Hooks need review* dialog — choose **Trust all and continue**.
+Headless runs (`codex exec`) skip untrusted hooks **silently**, so either trust
+once in the TUI first, or add `--dangerously-bypass-hook-trust` to automation
+that already vets the file. Editing `hooks.json` invalidates the trust, so
+re-trust after any change.
+
+If you use profiles (`$CODEX_HOME/<name>.config.toml`), the hooks file is shared
+across all of them: `~/.codex/hooks.json` applies to every profile, including
+`codex --profile enmaas`.
 
 Project-local `.codex/hooks.json` only loads when the project's `.codex/` layer
 is trusted.
@@ -325,7 +342,7 @@ If the harness can run a shell command at "prompt submitted", "before tool" and
 
 | Field | Required | Notes |
 | :--- | :--- | :--- |
-| `hook_event_name` (or `hookEventName`) | yes | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` (or Cursor's `preToolUse` / `beforeShellExecution` / `afterShellExecution`) for tools |
+| `hook_event_name` (or `hookEventName`) | yes | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` for tools; optional `Stop` / `SessionEnd` to flush calls that never reported back |
 | `session_id` | yes | Also accepted: `conversation_id`, `thread_id`, `sessionId` |
 | `prompt` | prompts | Also accepted: `user_prompt`, `userPrompt`, `message`, `text` |
 | `tool_name` | tools | Free-form; `Bash` / `Shell` / `exec_command` / `terminal` / `sh` / `zsh` are treated as shell commands, everything else as a tool call |
@@ -381,6 +398,9 @@ additionally accepts `--harness <label>`.
   timestamp still shows when it started.
 - **Entry IDs** are derived from the harness's message/tool-call ID, so they are
   stable and unique within a session.
+- **Turn end flushes the leftovers.** If a harness ends the turn with a call
+  that never reported a result, it is written as ⚠️ unconfirmed rather than
+  silently lost.
 - **Paths are dated once per session** and reused, so a long session cannot split
   into two files at midnight.
 - **Prompt text, tool input and output are all clipped** at `maxOutput`
@@ -404,6 +424,9 @@ code:
 - **Codex has no failure hook**: a non-zero exit arrives as a normal
   `PostToolUse`, so it stays `✅ completed` and the failure is visible in the
   output text.
+- `⚠️ unconfirmed` means the harness announced the call but never reported a
+  result — Codex does this for `apply_patch`. The input is kept, the output is
+  not invented, and the entry says so. Nothing about the exit code is guessed.
 - Prompts are marked 💬 instead of a status, because they are not tool calls.
 
 ### Timezones
@@ -479,7 +502,7 @@ does not leak the ledger anywhere.
 | OpenCode 2.x | yes, live | Duration includes manual-approval wait; timestamp is request time, not process spawn |
 | Claude Code | yes, live | Hooks must be trusted and enabled; only events you configure are recorded |
 | Cursor | yes, hook payloads | Requires a valid JSON reply on permission hooks — the CLI handles it, custom wrappers must too |
-| Codex | yes, hook payloads | No failure event and no `duration_ms`; duration is measured between the two hooks |
+| Codex | yes, live | No failure event and no `duration_ms`; `apply_patch` gets no result hook, so it is recorded as ⚠️ unconfirmed at turn end |
 | Anything else | contract above | Only what the harness emits; no prompt event means no prompt entries |
 
 Other deliberate limits:
@@ -502,7 +525,7 @@ Other deliberate limits:
 ## Development
 
 ```bash
-node --test tests/          # 38 unit + end-to-end tests
+node --test tests/          # 42 unit + end-to-end tests
 node bin/session-ledger.js show-config
 ```
 

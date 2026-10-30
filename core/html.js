@@ -22,6 +22,7 @@ const CSS = `
   --code:rgba(17,24,39,.05); --shadow:0 20px 48px -28px rgba(15,23,42,.35);
   --ok:#046c4e; --okbg:rgba(5,150,105,.12);
   --fail:#a01b1b; --failbg:rgba(220,38,38,.1);
+  --warn:#92400e; --warnbg:rgba(245,158,11,.14);
   --accent:#1e40af;
 }
 @media (prefers-color-scheme:dark){
@@ -32,6 +33,7 @@ const CSS = `
     --code:rgba(226,232,240,.06); --shadow:0 20px 48px -28px rgba(0,0,0,.85);
     --ok:#5eead4; --okbg:rgba(13,148,136,.16);
     --fail:#fca5a5; --failbg:rgba(239,68,68,.14);
+    --warn:#fcd34d; --warnbg:rgba(245,158,11,.14);
     --accent:#93b4f5;
   }
 }
@@ -73,11 +75,13 @@ dl.meta dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font
 .entry{position:relative;overflow:hidden}
 .entry::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--ok);opacity:.75}
 .entry.fail::before{background:var(--fail)}
+.entry[data-status=unconfirmed]::before{background:var(--warn)}
 .entry.prompt::before{background:var(--accent)}
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;font-size:12.5px;color:var(--muted)}
 .pill{font-weight:700;padding:3px 10px;border-radius:999px;font-size:11.5px;letter-spacing:.02em}
 .pill.ok{color:var(--ok);background:var(--okbg)}
 .pill.fail{color:var(--fail);background:var(--failbg)}
+.pill.unk{color:var(--warn);background:var(--warnbg)}
 .pill.prompt{color:var(--accent);background:var(--code)}
 .sep{opacity:.4}
 .id{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:2px 8px;border-radius:8px;background:var(--code)}
@@ -134,14 +138,18 @@ ${ENTRIES_MARK}
 
 export function card(e, session) {
   const failed = e.status === "failed"
+  const unconfirmed = e.status === "unconfirmed"
   const at = parts(e.at, session.timezone)
   const tz = zoneName(session.timezone, e.at)
   const elsewhere = e.cwd && e.cwd !== session.directory
   const kind = e.kind ?? "command"
   const label = kind === "prompt" ? "prompt" : kind === "tool" ? e.tool ?? "tool" : "command"
 
-  const output =
-    e.output.trim() === "" ? `<p class="empty">(no output)</p>` : `<pre class="out"><code>${esc(e.output.replace(/\n+$/, ""))}</code></pre>`
+  const output = unconfirmed
+    ? `<p class="empty">no result reported by the harness — the turn ended before this call finished</p>`
+    : e.output.trim() === ""
+      ? `<p class="empty">(no output)</p>`
+      : `<pre class="out"><code>${esc(e.output.replace(/\n+$/, ""))}</code></pre>`
   const note = e.truncated > 0 ? `<p class="empty">… ${e.truncated.toLocaleString("en-US")} characters truncated</p>` : ""
 
   const body =
@@ -156,9 +164,11 @@ ${output}${note}`
   const pill =
     kind === "prompt"
       ? `<span class="pill prompt">💬 prompt</span>`
-      : `<span class="pill ${failed ? "fail" : "ok"}">${failed ? "✕ failed" : "✓ completed"}</span>`
+      : unconfirmed
+        ? `<span class="pill unk">⚠ unconfirmed</span>`
+        : `<span class="pill ${failed ? "fail" : "ok"}">${failed ? "✕ failed" : "✓ completed"}</span>`
 
-  return `<section class="card entry${failed ? " fail" : ""}${kind === "prompt" ? " prompt" : ""}" data-kind="${kind}" data-status="${failed ? "failed" : "completed"}" id="e-${esc(e.id)}">
+  return `<section class="card entry${failed ? " fail" : ""}${kind === "prompt" ? " prompt" : ""}" data-kind="${kind}" data-status="${e.status}" id="e-${esc(e.id)}">
 <div class="row">
 ${pill}
 <span>${esc(at.time)} ${esc(tz)}</span>
@@ -178,6 +188,7 @@ export function stats(html) {
   const tools = count("tool")
   const prompts = count("prompt")
   const failed = (html.match(/data-status="failed"/g) ?? []).length
+  const unconfirmed = (html.match(/data-status="unconfirmed"/g) ?? []).length
   const total = commands + tools + prompts
   return [
     `<span class="chip">${total} event${total === 1 ? "" : "s"}</span>`,
@@ -185,6 +196,7 @@ export function stats(html) {
     commands > 0 ? `<span class="chip ok">${commands} command${commands === 1 ? "" : "s"}</span>` : "",
     tools > 0 ? `<span class="chip">${tools} tool call${tools === 1 ? "" : "s"}</span>` : "",
     failed > 0 ? `<span class="chip fail">${failed} failed</span>` : "",
+    unconfirmed > 0 ? `<span class="chip">${unconfirmed} unconfirmed</span>` : "",
   ]
     .filter(Boolean)
     .join("")

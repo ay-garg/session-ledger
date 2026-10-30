@@ -316,3 +316,38 @@ test("garbage on stdin is ignored instead of crashing the harness", async () => 
   assert.equal(result.code, 0)
   assert.deepEqual(await readdir(dir), [])
 })
+
+test("a call that never reports back is written at turn end, marked unconfirmed", async () => {
+  const dir = await sandbox()
+  // Codex announces apply_patch, never sends PostToolUse for it, then ends the turn.
+  await run(["--dir", dir], {
+    session_id: "cx-patch",
+    cwd: "/work/project",
+    hook_event_name: "PreToolUse",
+    tool_name: "Bash",
+    tool_input: { command: "apply_patch <<'PATCH'\n*** Begin Patch\n*** End Patch\nPATCH" },
+    tool_use_id: "call_patch1",
+  })
+  // nothing on disk until the turn ends
+  assert.deepEqual((await readdir(dir)).filter((n) => n.endsWith(".md")), [])
+
+  await run(["--dir", dir], { session_id: "cx-patch", cwd: "/work/project", hook_event_name: "Stop" })
+
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /^### ⚠️ \d{2}:\d{2}:\d{2} IST · — · `l_patch1`$/m)
+  assert.match(text, /apply_patch/)
+  assert.match(text, /no result reported by the harness/)
+})
+
+test("a turn end with nothing pending writes nothing and leaves no state", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir], { session_id: "cx-quiet", cwd: "/work/project", hook_event_name: "Stop" })
+  assert.deepEqual(await readdir(dir), [])
+})
+
+test("an unconfirmed call is not flushed into another session's file", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir], { ...claudeStart, session_id: "ses-a", tool_use_id: "toolu_a" })
+  await run(["--dir", dir], { session_id: "ses-b", cwd: "/work/project", hook_event_name: "Stop" })
+  assert.deepEqual((await readdir(dir)).filter((n) => n.endsWith(".md")), [])
+})

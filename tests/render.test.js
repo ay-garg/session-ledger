@@ -151,3 +151,23 @@ test("output shapes from different harnesses are unwrapped", () => {
 test("fence grows past the longest backtick run", () => {
   assert.match(fence("see ``` and ````", "text"), /^`````text\n/)
 })
+
+test("output containing $& or $' cannot duplicate the html document", async () => {
+  const { mkdtemp, readFile } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const { record } = await import("../core/store.js")
+
+  const dir = await mkdtemp(join(tmpdir(), "session-ledger-html-"))
+  const config = { dir, timezone: "Asia/Kolkata", html: true, maxOutput: 20000 }
+  const subject = { ...session, id: "html-escape", directory: "/work" }
+  const tricky = { ...entry, id: "e1", output: "echo $& $' $` $1 <!-- session-ledger:entries --> <html>" }
+
+  await record(subject, tricky, config)
+  await record(subject, { ...tricky, id: "e2" }, config)
+
+  const html = await readFile(join(dir, `${parts(subject.started, config.timezone).date}-html-escape.html`), "utf8")
+  assert.equal((html.match(/<!doctype html>/gi) ?? []).length, 1)
+  assert.equal((html.match(/<!-- session-ledger:entries -->/g) ?? []).length, 1)
+  assert.match(html, /echo \$&amp; \$'/) // still escaped, still shown
+})

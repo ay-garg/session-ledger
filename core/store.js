@@ -57,7 +57,9 @@ export async function record(session, entry, config) {
 
 async function appendHtml(file, session, entry) {
   let html = existsSync(file) ? await readFile(file, "utf8") : skeleton(session)
-  html = html.replace(ENTRIES_MARK, card(entry, session) + ENTRIES_MARK)
+  // A function replacement, not a string: tool output containing `$&` or `$'`
+  // would otherwise be expanded by String.replace and duplicate the document.
+  html = html.replace(ENTRIES_MARK, () => card(entry, session) + ENTRIES_MARK)
   html = html.replace(
     new RegExp(`${STATS_START}[\\s\\S]*?${STATS_END}`),
     `${STATS_START}${stats(html)}${STATS_END}`,

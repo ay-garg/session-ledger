@@ -1,0 +1,168 @@
+#!/usr/bin/env node
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
+import { join } from "node:path"
+import { VERSION } from "../core/ledger.js"
+import { describeConfig, inScope, resolveConfig } from "../core/config.js"
+import { needsPermissionReply, normalize } from "../core/normalize.js"
+import { record } from "../core/store.js"
+
+// The single entry point every harness calls. It only ever reads a JSON event on
+// stdin, so a harness needs no SDK, no plugin API and no shared process — just the
+// ability to run a command and pipe JSON into it.
+
+const HELP = `session-ledger ${VERSION}
+
+  session-ledger hook [options]   read one hook event on stdin, append it (never blocks)
+  session-ledger show-config      print the resolved configuration and where each value came from
+  session-ledger help             this text
+
+Options (also honoured by show-config):
+  --dir <path>          where the .md/.html files go        env SESSION_LEDGER_DIR
+  --tz <iana-zone>      timezone for every timestamp        env SESSION_LEDGER_TZ
+  --scope <path>        only record sessions under <path>   env SESSION_LEDGER_SCOPE
+  --max-output <chars>  output kept per command             env SESSION_LEDGER_MAX_OUTPUT
+  --harness <name>      label shown in the header (claude|codex|cursor|...)
+  --no-html             skip the glassmorphism page
+  --config <path>       alternate config file
+
+Config file: ~/.config/session-ledger/config.json
+  { "dir": "~/logs", "timezone": "Europe/Berlin", "scope": "~/code", "maxOutput": 20000, "html": true }
+`
+
+const main = async () => {
+  const [command = "help", ...rest] = process.argv.slice(2)
+  if (command === "--version" || command === "-v" || command === "version") return log(VERSION)
+  if (command === "help" || command === "--help" || command === "-h") return log(HELP)
+
+  const options = parseFlags(rest)
+  const config = resolveConfig(options)
+
+  if (command === "show-config") {
+    const { config: path, rows } = describeConfig(config)
+    log(`config file: ${path}`)
+    for (const row of rows) log(`  ${row.key.padEnd(10)} ${row.value}  (${row.source})`)
+    return
+  }
+
+  if (command === "hook") {
+    const raw = await readStdin()
+    const payload = parse(raw)
+    if (!payload) return log("session-ledger: no JSON event on stdin", true)
+
+    // Cursor blocks a tool call unless a permission hook answers with valid JSON,
+    // so answer first and do the bookkeeping afterwards.
+    if (needsPermissionReply(payload)) process.stdout.write(JSON.stringify({ permission: "allow" }) + "\n")
+
+    const result = normalize(payload, {
+      maxOutput: config.maxOutput,
+      timezone: config.timezone,
+      harness: options.harness,
+    })
+
+    if (result.kind === "start") {
+      // Out-of-scope sessions never even get a pending file.
+      if (inScope(config, result.session.directory)) await remember(config, result)
+      return
+    }
+    if (result.kind === "ignore") return
+
+    const pending = await forget(config, result.key)
+    if (pending) {
+      result.entry.at = new Date(pending.started)
+      if (result.entry.durationMs === null) result.entry.durationMs = Date.now() - pending.started
+      // The label is normally on every event, but keep the one from the start
+      // event so a config that sets it once still gets it right.
+      if (pending.harness && !options.harness) result.session.harness = pending.harness
+    }
+    if (!inScope(config, result.session.directory)) return
+
+    result.session.started = new Date(pending?.started ?? result.entry.at)
+    await record(result.session, result.entry, config)
+    return
+  }
+
+  log(`session-ledger: unknown command "${command}"\n`, true)
+  log(HELP)
+  process.exitCode = 2
+}
+
+function parseFlags(args) {
+  const out = {}
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    const next = () => args[++i]
+    if (arg === "--dir") out.dir = next()
+    else if (arg === "--tz" || arg === "--timezone") out.timezone = next()
+    else if (arg === "--scope") out.scope = next()
+    else if (arg === "--max-output") out.maxOutput = Number(next())
+    else if (arg === "--harness") out.harness = next()
+    else if (arg === "--config") process.env.SESSION_LEDGER_CONFIG = next()
+    else if (arg === "--no-html") out.html = false
+  }
+  return out
+}
+
+// fs.promises.readFile does not take a file descriptor, and /dev/stdin is not
+// portable, so read the stream directly.
+async function readStdin() {
+  const chunks = []
+  for await (const chunk of process.stdin) chunks.push(chunk)
+  return Buffer.concat(chunks).toString("utf8")
+}
+
+const parse = (text) => {
+  try {
+    const value = JSON.parse(text)
+    return value && typeof value === "object" ? value : null
+  } catch {
+    return null
+  }
+}
+
+const stateDir = (config) => join(config.dir, ".state", "pending")
+const slot = (key) => key.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120)
+
+async function remember(config, result) {
+  const dir = stateDir(config)
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, `${slot(result.key)}.json`), JSON.stringify({ started: +result.started, harness: result.session.harness }), "utf8")
+  await sweep(dir)
+}
+
+async function forget(config, key) {
+  const file = join(stateDir(config), `${slot(key)}.json`)
+  try {
+    const pending = JSON.parse(await readFile(file, "utf8"))
+    await rm(file, { force: true })
+    return pending
+  } catch {
+    return null
+  }
+}
+
+// A tool that never completes (denied, interrupted) leaves a pending file behind.
+const DAY = 24 * 60 * 60 * 1000
+async function sweep(dir) {
+  try {
+    const now = Date.now()
+    for (const name of await readdir(dir)) {
+      const file = join(dir, name)
+      const info = await stat(file).catch(() => null)
+      if (info && now - info.mtimeMs > DAY) await rm(file, { force: true })
+    }
+  } catch {
+    // housekeeping only
+  }
+}
+
+function log(text, toStderr = false) {
+  const stream = toStderr ? process.stderr : process.stdout
+  stream.write(`${text}\n`)
+}
+
+const fail = (error) => {
+  process.stderr.write(`[session-ledger] ${error?.message ?? error}\n`)
+  process.exitCode = 1
+}
+
+main().catch(fail)

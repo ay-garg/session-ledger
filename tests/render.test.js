@@ -1,0 +1,106 @@
+import assert from "node:assert/strict"
+import test from "node:test"
+import { clip, duration, fence, parts, textOf, zoneName, zoneOffset } from "../core/ledger.js"
+import { entry as markdownEntry, header } from "../core/markdown.js"
+import { card, stats } from "../core/html.js"
+
+const session = {
+  id: "ses_test",
+  title: "demo",
+  harness: "OpenCode",
+  version: "2.2.3",
+  directory: "/work",
+  started: new Date("2026-10-30T15:30:00Z"),
+  timezone: "Asia/Kolkata",
+}
+
+const entry = {
+  id: "a1b2c3d4",
+  at: new Date("2026-10-30T15:30:05Z"),
+  durationMs: 1780,
+  status: "completed",
+  command: "echo hi",
+  cwd: "/work",
+  output: "hi\n",
+  truncated: 0,
+}
+
+test("pins the zone, not the host clock", () => {
+  assert.equal(parts(new Date("2026-10-30T15:30:00Z"), "Asia/Kolkata").time, "21:00:00")
+  assert.equal(zoneName("Asia/Kolkata", session.started), "IST")
+  assert.equal(zoneOffset("Asia/Kolkata", session.started), "UTC+05:30")
+})
+
+test("entry names the zone and the duration", () => {
+  const md = markdownEntry(entry, session)
+  assert.match(md, /^### ✅ 21:00:05 IST · 1\.78 s · `a1b2c3d4`/m)
+  assert.match(md, /```bash\necho hi\n```/)
+  assert.match(md, /```text\nhi\n```/)
+})
+
+test("failed entries are marked and keep the error text", () => {
+  const md = markdownEntry({ ...entry, status: "failed", output: "boom", durationMs: 42 }, session)
+  assert.match(md, /^### ❌ /m)
+  assert.match(md, /boom/)
+  assert.match(md, /42 ms/)
+})
+
+test("unknown duration reads as unknown, not as zero", () => {
+  assert.match(markdownEntry({ ...entry, durationMs: null }, session), /· — ·/)
+  assert.equal(duration(null), "—")
+})
+
+test("empty output is stated, not left blank", () => {
+  assert.match(markdownEntry({ ...entry, output: "" }, session), /\(no output\)/)
+})
+
+test("a command containing backticks cannot break out of its fence", () => {
+  const md = markdownEntry({ ...entry, command: "echo ```nested```" }, session)
+  assert.match(md, /^````bash$/m)
+})
+
+test("truncation is disclosed", () => {
+  const { body, truncated } = clip("x".repeat(120), 100)
+  assert.equal(body.length, 100)
+  assert.equal(truncated, 20)
+  assert.match(markdownEntry({ ...entry, output: body, truncated }, session), /20 characters truncated/)
+})
+
+test("strings are escaped in html", () => {
+  const html = card({ ...entry, command: "echo <b>&" }, session)
+  assert.match(html, /echo &lt;b&gt;&amp;/)
+  assert.doesNotMatch(html, /<b>/)
+})
+
+test("stats count the cards actually present", () => {
+  const html = card(entry, session) + card({ ...entry, id: "deadbeef", status: "failed" }, session)
+  assert.match(stats(html), /2 commands/)
+  assert.match(stats(html), /1 completed/)
+  assert.match(stats(html), /1 failed/)
+})
+
+test("header states the format version and zone", () => {
+  const md = header(session)
+  assert.match(md, /schema 1/)
+  assert.match(md, /Asia\/Kolkata/)
+  assert.match(md, /2026-10-30 21:00:00 IST/)
+})
+
+test("duration reads well at every scale", () => {
+  assert.equal(duration(42), "42 ms")
+  assert.equal(duration(1780), "1.78 s")
+  assert.equal(duration(125_000), "2m 05s")
+})
+
+test("output shapes from different harnesses are unwrapped", () => {
+  assert.equal(textOf({ stdout: "out", stderr: "err" }), "out\nerr")
+  assert.equal(textOf({ stdout: "out", stderr: "" }), "out")
+  assert.equal(textOf('{"exitCode":0,"stdout":"passed","stderr":""}'), "passed")
+  assert.equal(textOf({ output: "plain" }), "plain")
+  assert.equal(textOf([{ text: "a" }, { text: "b" }]), "a\nb")
+  assert.equal(textOf(undefined), "")
+})
+
+test("fence grows past the longest backtick run", () => {
+  assert.match(fence("see ``` and ````", "text"), /^`````text\n/)
+})

@@ -1,0 +1,36 @@
+{
+  "name": "session-ledger",
+  "version": "0.2.0",
+  "description": "Every command your AI agent ran, with its output and timestamps, as a readable markdown ledger. Works with OpenCode, Claude Code, Cursor, Codex and any harness that can pipe JSON to a hook.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "session-ledger": "bin/session-ledger.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ay-garg/session-ledger.git"
+  },
+  "keywords": [
+    "opencode",
+    "claude-code",
+    "cursor",
+    "codex",
+    "agents",
+    "audit",
+    "logging",
+    "markdown"
+  ],
+  "files": [
+    "bin",
+    "core",
+    "adapters",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/"
+  }
+}

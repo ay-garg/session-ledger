@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code"
+          }
+        ]
+      }
+    ]
+  }
+}

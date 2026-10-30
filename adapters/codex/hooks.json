@@ -1,0 +1,29 @@
+{
+  "description": "Record every shell command Codex runs as a markdown ledger.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

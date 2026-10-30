@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor",
+        "matcher": "Shell"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor",
+        "matcher": "Shell"
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor",
+        "matcher": "Shell"
+      }
+    ]
+  }
+}

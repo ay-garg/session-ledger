@@ -144,8 +144,9 @@ sed -n '1,40p' /tmp/session-ledger-demo/*.md
 ```
 
 You should get `2026-…-demo.md` and `2026-…-demo.html`, one 💬 entry and one ✅
-entry, timestamps in `Asia/Kolkata`. If that works, the only remaining variable
-is the harness wiring below.
+entry, timestamps in `Asia/Kolkata`. Open the `.html` with `open` to see the page
+before you wire anything. If that works, the only remaining variable is the
+harness wiring below.
 
 ### Where each value can come from
 
@@ -381,9 +382,19 @@ observing, so a bad event is dropped rather than turned into a failed tool call.
 A genuine write failure (permissions, disk full) exits `1` and says why; it is
 never silent. `show-config` and unknown commands may also exit non-zero.
 
+`render` brings existing pages up to the current look: for every `.html` in the
+output directory it swaps the stylesheet and the one-line description, leaving
+the entries alone. It takes the same per-page lock the hooks take, so it is safe
+to run while a session is live. Pages are never rebuilt from the markdown, so an
+entry is never re-parsed or reordered.
+
+```
+session-ledger render --dir ~/session-logs
+```
+
 Flags accepted by `hook` and `show-config`: `--dir`, `--tz`, `--scope`,
 `--max-output`, `--no-prompts`, `--no-tools`, `--no-html`, `--config`. `hook`
-additionally accepts `--harness <label>`.
+additionally accepts `--harness <label>`; `render` reads `--dir` and `--config`.
 
 ---
 

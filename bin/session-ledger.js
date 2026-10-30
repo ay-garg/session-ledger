@@ -5,7 +5,7 @@ import { VERSION } from "../core/ledger.js"
 import { CSS } from "../core/html.js"
 import { describeConfig, inScope, resolveConfig } from "../core/config.js"
 import { needsPermissionReply, normalize } from "../core/normalize.js"
-import { record } from "../core/store.js"
+import { record, withLock } from "../core/store.js"
 
 // The single entry point every harness calls. It only ever reads a JSON event on
 // stdin, so a harness needs no SDK, no plugin API and no shared process — just the
@@ -116,14 +116,18 @@ async function restyle(dir) {
   for (const name of await readdir(dir).catch(() => [])) {
     if (!name.endsWith(".html")) continue
     const file = join(dir, name)
-    const html = await readFile(file, "utf8")
-    // A function replacement, so a stylesheet containing `$&` cannot be expanded.
-    let next = html.replace(/<style>[\s\S]*?<\/style>/, () => `<style>${CSS}</style>`)
-    // Older pages describe themselves in words the current skeleton no longer uses.
-    next = next.replace("append-only command record</p>", "append-only record of prompts, commands and tool calls</p>")
-    if (next === html) continue
-    await writeFile(file, next, "utf8")
-    count++
+    // Same lock the hooks take, so a live session cannot lose an entry to this.
+    const changed = await withLock(file, async () => {
+      const html = await readFile(file, "utf8")
+      // A function replacement, so a stylesheet containing `$&` cannot be expanded.
+      let next = html.replace(/<style>[\s\S]*?<\/style>/, () => `<style>${CSS}</style>`)
+      // Older pages describe themselves in words the current skeleton no longer uses.
+      next = next.replace("append-only command record</p>", "append-only record of prompts, commands and tool calls</p>")
+      if (next === html) return false
+      await writeFile(file, next, "utf8")
+      return true
+    })
+    if (changed) count++
   }
   return count
 }

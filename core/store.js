@@ -72,7 +72,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // shortcut: a lock left behind by a killed process is ignored after ~1s and the
 // write proceeds, so the HTML can lose one entry. Upgrade to a PID-checked lock
 // if that ever bites. The markdown is the record and is never locked.
-async function withLock(file, fn) {
+export async function withLock(file, fn) {
   const lock = `${file}.lock`
   for (let attempt = 0; attempt < 40; attempt++) {
     try {

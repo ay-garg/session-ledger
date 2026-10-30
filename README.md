@@ -147,8 +147,14 @@ object from the [Claude Code example](adapters/claude-code/settings.example.json
       { "matcher": "*", "hooks": [{ "type": "command",
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
     ],
-    "PostToolUse": [ … same matcher and command … ],
-    "PostToolUseFailure": [ … same matcher and command … ]
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command",
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
+    ],
+    "PostToolUseFailure": [
+      { "matcher": "*", "hooks": [{ "type": "command",
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
+    ]
   }
 }
 ```
@@ -177,8 +183,14 @@ add the hooks to every profile you want recorded.
       { "matcher": "*", "hooks": [{ "type": "command", "timeout": 10,
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex" }] }
     ],
-    "PostToolUse": [ … same matcher and command … ],
-    "Stop": [ … same command, no matcher … ]
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "timeout": 10,
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "timeout": 10,
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex" }] }
+    ]
   }
 }
 ```
@@ -211,8 +223,12 @@ covers `codex --profile …` too.
     "preToolUse": [
       { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
     ],
-    "postToolUse": [ … same command … ],
-    "postToolUseFailure": [ … same command … ]
+    "postToolUse": [
+      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
+    ],
+    "postToolUseFailure": [
+      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
+    ]
   }
 }
 ```

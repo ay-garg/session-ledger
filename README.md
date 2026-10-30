@@ -16,6 +16,14 @@ step — just `node` ≥ 18.
 
 ---
 
+## Contents
+
+| Getting started | Harnesses | Reference |
+| :--- | :--- | :--- |
+| [Install](#install) · [Verify it works](#verify-it-works) · [Configure](#configure) | [OpenCode](#opencode-2x) · [Claude Code](#claude-code) · [Cursor](#cursor) · [Codex](#codex) · [Any other](#any-other-harness) | [CLI](#cli-reference) · [What gets written](#what-gets-written) · [Troubleshooting](#troubleshooting) · [Privacy](#privacy) · [Limitations](#limitations-honestly) |
+
+---
+
 ## What a session looks like
 
 ````markdown
@@ -77,8 +85,9 @@ VS Code and Obsidian and degrades to a quote everywhere else.
 
 Markdown cannot do translucency, blur or layered gradients — a "glassmorphism
 markdown file" is not a thing. So the aesthetic lives in a self-contained HTML
-page written next to the markdown: frosted cards, mesh gradient background, light
-and dark by `prefers-color-scheme`, no JavaScript, no network requests. The
+page written next to the markdown: frosted cards over a low-contrast slate
+background, light and dark by `prefers-color-scheme`, no JavaScript, no network
+requests. The
 markdown stays canonical; the HTML is a view of it.
 
 ---
@@ -112,6 +121,28 @@ node bin/session-ledger.js show-config
 
 Requires **Node.js 18 or newer**. There are no dependencies to install and no
 `npm run build`.
+
+The commands below use `node bin/session-ledger.js` so nothing needs installing.
+If you would rather type `session-ledger`, run `npm link` once in the clone;
+every example then works with `session-ledger hook …` instead.
+
+### Verify it works
+
+Four lines, no harness involved — this is the fastest way to prove the install,
+the timezone and the file naming before you touch any agent config:
+
+```bash
+printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"demo","cwd":"/tmp","prompt":"Fix the checkout test"}' \
+  | node bin/session-ledger.js hook --harness demo --tz Asia/Kolkata --dir /tmp/session-ledger-demo
+printf '%s' '{"hook_event_name":"PostToolUse","session_id":"demo","tool_name":"Bash","tool_input":{"command":"echo hello"},"cwd":"/tmp","tool_response":{"stdout":"hello"}}' \
+  | node bin/session-ledger.js hook --harness demo --tz Asia/Kolkata --dir /tmp/session-ledger-demo
+ls /tmp/session-ledger-demo
+sed -n '1,40p' /tmp/session-ledger-demo/*.md
+```
+
+You should get `2026-…-demo.md` and `2026-…-demo.html`, one 💬 entry and one ✅
+entry, timestamps in `Asia/Kolkata`. If that works, the only remaining variable
+is the harness wiring below.
 
 ### Where each value can come from
 
@@ -153,6 +184,9 @@ Notes that save debugging time:
   e.g. `~/code`, not to a single repo, if you work across repos.
 - `--harness` is a label for the markdown header only (`claude-code`, `cursor`,
   `codex`, anything you like). It does not change parsing.
+- `--no-tools` hides other tools but never shell commands, and `--no-prompts`
+  never touches commands or tools. Prompts can be turned off alone if the text
+  you type is more sensitive than the commands the agent runs.
 
 Environment variables are handy for a one-off run; the config file is better for
 hooks, because hook processes do not inherit your shell aliases or exports.
@@ -179,8 +213,9 @@ matching `.ts` file when it is given a `.js` import, and fails when the repo has
 none.
 
 Reload with `opencode api post /api/location/reload`. A session already running
-keeps its old plugin snapshot until it is reloaded. Verify by running a shell
-command and checking that a `.md` appeared in your log directory.
+keeps its old plugin snapshot until it is reloaded, so do this before you judge
+whether it works. Verify by running a shell command and checking that a `.md`
+appeared in your log directory, then send one message and look for a 💬 entry.
 
 The adapter uses OpenCode's native `session.hook("prompt")` for prompts and
 `execute.before` / `execute.after` for every tool, so it records the exact text,
@@ -215,6 +250,12 @@ The full file ships in the adapter folder; `…` above is only for brevity.
 become 🛠 entries. Restart Claude Code or open `/hooks` to confirm the hooks
 loaded. Claude Code supplies `duration_ms`, so durations are the tool's own
 measurement, not a wall-clock guess.
+
+This path is verified live, including headless runs (`claude -p "…"`), where hooks
+fire exactly as they do interactively. If you keep several Claude Code profiles
+via `CLAUDE_CONFIG_DIR` (work, personal, vertex), each profile has its own
+`settings.json` — add the hooks to every profile you want recorded, or to a
+project's `.claude/settings.json` to cover one repo.
 
 ### Cursor
 
@@ -284,9 +325,9 @@ If the harness can run a shell command at "prompt submitted", "before tool" and
 
 | Field | Required | Notes |
 | :--- | :--- | :--- |
-| `hook_event_name` | yes | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` (or Cursor's `preToolUse` / `beforeShellExecution` / `afterShellExecution`) for tools |
+| `hook_event_name` (or `hookEventName`) | yes | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` (or Cursor's `preToolUse` / `beforeShellExecution` / `afterShellExecution`) for tools |
 | `session_id` | yes | Also accepted: `conversation_id`, `thread_id`, `sessionId` |
-| `prompt` | prompts | Also accepted: `user_prompt`, `userPrompt`, `message` |
+| `prompt` | prompts | Also accepted: `user_prompt`, `userPrompt`, `message`, `text` |
 | `tool_name` | tools | Free-form; `Bash` / `Shell` / `exec_command` / `terminal` / `sh` / `zsh` are treated as shell commands, everything else as a tool call |
 | `tool_input.command` | shell | Also accepted: `tool_input.cmd`, top-level `command` |
 | `tool_input` | tools | Recorded as the tool's JSON input |
@@ -298,13 +339,9 @@ A harness with only an "after tool" event and no "before" event still records th
 call; only the duration shows `—`. A harness with no prompt event records
 commands and tools but no 💬 entries.
 
-Minimal manual test, no harness involved:
-
-```bash
-echo '{"hook_event_name":"PostToolUse","session_id":"demo","tool_name":"Bash","tool_input":{"command":"echo hello"},"cwd":"'$PWD'","tool_response":{"stdout":"hello"}}' \
-  | node bin/session-ledger.js hook --harness demo --dir /tmp/session-ledger-demo
-cat /tmp/session-ledger-demo/*.md
-```
+The command your harness runs is the same one from
+[Verify it works](#verify-it-works) — add `--harness <name>` to label the header,
+and point the hook at every event in the table above.
 
 ---
 
@@ -338,15 +375,18 @@ additionally accepts `--harness <label>`.
   rewritten atomically under a short lock so parallel tool calls cannot corrupt
   it.
 - **The markdown is append-only.** The header is written once; entries are only
-  ever appended, in the order the harness reported them. That is what makes it an
-  audit record rather than a log that can be silently rewritten.
+  ever appended, in the order they *finished*. That is what makes it an audit
+  record rather than a log that can be silently rewritten. A nested call (an
+  `Agent`/subagent turn) therefore lands after the tools it spawned — its own
+  timestamp still shows when it started.
 - **Entry IDs** are derived from the harness's message/tool-call ID, so they are
   stable and unique within a session.
 - **Paths are dated once per session** and reused, so a long session cannot split
   into two files at midnight.
 - **Prompt text, tool input and output are all clipped** at `maxOutput`
-  characters; the entry says exactly how many characters were dropped. Nothing is
-  silently truncated.
+  characters; the entry says exactly how many characters were dropped, and a
+  clipped tool input gets its own note under **Input**. Nothing is silently
+  truncated.
 - **Empty output** is written as `(no output)` rather than an invisible blank.
 - **Safe fences.** A prompt or command containing ```` ``` ```` gets a longer
   fence instead of breaking the document.
@@ -377,6 +417,39 @@ changes and abbreviations like `IST` are unambiguous.
 Default is your machine's zone, resolved at run time; pin it in the config file
 if the ledger must be consistent across machines.
 
+### Reading a ledger
+
+```bash
+cat  OpenCode-Data/2026-10-30-*.md          # the record, top to bottom
+grep '^### 💬' OpenCode-Data/*.md           # every prompt you sent, across sessions
+grep -A3 '🛠 `mcp__' OpenCode-Data/*.md     # every MCP call and its input
+open OpenCode-Data/2026-10-30-*.html        # the same session, as a page
+```
+
+A whole session diffs cleanly: the header is stable and entries only append, so
+`git diff` shows exactly what happened between two points in time.
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| :--- | :--- | :--- |
+| No file at all | Session directory outside `scope` | Compare the harness's directory with `show-config`; widen or drop `scope` |
+| No file at all (Cursor) | The permission hook's stdout was piped or swallowed | The command must be run as-is; Cursor needs its `{"permission":"allow"}` reply |
+| No file at all (Codex) | Hooks never trusted | Open `/hooks`, review, trust; Codex skips silently until then |
+| No file at all (OpenCode) | Plugin not reloaded, or it failed to load | `opencode api post /api/location/reload`; import `entry.mjs`, not `plugin.js` |
+| Commands recorded, tools missing | Hook matcher is narrower than `*` | Use `"matcher": "*"` (Claude Code, Codex) or omit it (Cursor) |
+| Prompts recorded, nothing else | Only prompt hooks were wired | Add the before/after tool events too |
+| Every call appears twice | Hooks configured globally **and** in a project `.claude/settings.json` | Keep one of the two |
+| Wrong clock | `timezone` left at the machine default | Pin it: `--tz Asia/Kolkata` or the config file |
+| Duration shows `—` | The harness sent no start event, so there is nothing to measure from | Expected for after-only harnesses |
+| Page looks like an older version | The HTML stylesheet is written once, at creation | Delete that `.html`; it rebuilds with the current look |
+
+`hook` never fails an agent turn: malformed JSON, unknown events and out-of-scope
+sessions exit `0` after writing a line to stderr. If you see exit `1`, it is a
+real write problem — permissions or disk — and the message says which path.
+
 ---
 
 ## Privacy
@@ -404,7 +477,7 @@ does not leak the ledger anywhere.
 | Harness | Verified | Known gaps |
 | :--- | :--- | :--- |
 | OpenCode 2.x | yes, live | Duration includes manual-approval wait; timestamp is request time, not process spawn |
-| Claude Code | yes, hook payloads | Hooks must be trusted and enabled; only events you configure are recorded |
+| Claude Code | yes, live | Hooks must be trusted and enabled; only events you configure are recorded |
 | Cursor | yes, hook payloads | Requires a valid JSON reply on permission hooks — the CLI handles it, custom wrappers must too |
 | Codex | yes, hook payloads | No failure event and no `duration_ms`; duration is measured between the two hooks |
 | Anything else | contract above | Only what the harness emits; no prompt event means no prompt entries |
@@ -419,6 +492,9 @@ Other deliberate limits:
   same hook events.
 - The HTML loses an entry if a process is killed while holding its lock; the
   markdown is never locked and never loses one.
+- The HTML's stylesheet and header are written when the page is created, so a
+  later version or theme change only affects new sessions. Delete an `.html` to
+  have it rebuilt (from that point on) with the current look.
 - There is no rotation or retention policy. One file per session, forever.
 
 ---
@@ -426,14 +502,14 @@ Other deliberate limits:
 ## Development
 
 ```bash
-node --test tests/          # unit + end-to-end tests
+node --test tests/          # 38 unit + end-to-end tests
 node bin/session-ledger.js show-config
 ```
 
 ```
 bin/session-ledger.js   CLI: hook, show-config, flags, pending state
 core/ledger.js          timezone formatting, durations, fences, output unwrapping
-core/normalize.js       the only file that knows the three harness payload shapes
+core/normalize.js       the only file that knows every harness payload shape
 core/config.js          flag > env > file > default, scope matching
 core/store.js           file naming, append, HTML lock
 core/markdown.js        the record

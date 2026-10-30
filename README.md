@@ -8,7 +8,7 @@ Append-only, harness-agnostic, and readable a year later without the tool that w
 
 [![version](https://img.shields.io/badge/version-0.6.0-1d1d1f?style=flat-square)](package.json)
 [![node](https://img.shields.io/badge/node-%E2%89%A5%2018-3c873a?style=flat-square)](package.json)
-[![tests](https://img.shields.io/badge/tests-43%20passing-1f8f4e?style=flat-square)](tests)
+[![tests](https://img.shields.io/badge/tests-69%20passing-1f8f4e?style=flat-square)](tests)
 [![dependencies](https://img.shields.io/badge/dependencies-0-0071e3?style=flat-square)](package.json)
 [![license](https://img.shields.io/badge/license-MIT-6e6e73?style=flat-square)](LICENSE)
 
@@ -33,7 +33,7 @@ can `cat`, `grep`, `diff` and commit.
 
 | | |
 | :--- | :--- |
-| **Records** | 💬 prompts · shell commands · 🛠 every other tool and MCP call |
+| **Records** | 💬 prompts · 🤖 replies · shell commands · 🛠 every other tool and MCP call |
 | **Writes** | one `.md` per session, plus a self-contained `.html` view |
 | **Needs** | `node` ≥ 18. No SDK, no server, no build step, no dependencies |
 | **Works with** | OpenCode, Claude Code, Cursor, Codex, or anything that can pipe JSON to a hook |
@@ -63,6 +63,7 @@ config file: /Users/you/.config/session-ledger/config.json
   maxOutput  20000  (default)
   html       true  (default)
   prompts    true  (default)
+  replies    true  (default)
   tools      true  (default)
 ```
 
@@ -154,6 +155,10 @@ object from the [Claude Code example](adapters/claude-code/settings.example.json
     "PostToolUseFailure": [
       { "matcher": "*", "hooks": [{ "type": "command",
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command",
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
     ]
   }
 }
@@ -161,8 +166,10 @@ object from the [Claude Code example](adapters/claude-code/settings.example.json
 
 `"matcher": "*"` is what makes every tool fire the hook instead of `Bash` alone; the
 non-shell ones become tool entries. Claude Code reports `duration_ms`, so durations are
-the tool's own measurement rather than a wall-clock guess. Restart Claude Code, or open
-`/hooks`, to confirm the wiring.
+the tool's own measurement rather than a wall-clock guess. `Stop` writes the turn's last
+message and any call that never reported back; what Claude says before a tool call is
+read from the session transcript as each tool starts and finishes. Restart Claude Code,
+or open `/hooks`, to confirm the wiring.
 
 Running several profiles through `CLAUDE_CONFIG_DIR`? Each has its own `settings.json` —
 add the hooks to every profile you want recorded.
@@ -251,6 +258,8 @@ moments are enough: prompt submitted, before a tool, after a tool.
 | `hook_event_name` (or `hookEventName`) | always | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` for tools; optional `Stop` / `SessionEnd` to flush calls that never reported back |
 | `session_id` | always | Also accepted: `conversation_id`, `thread_id`, `sessionId` |
 | `prompt` | prompt | Also accepted: `user_prompt`, `userPrompt`, `message`, `text`, `input` |
+| `last_assistant_message` | optional | On `Stop` / `SessionEnd`; recorded as a reply |
+| `transcript_path` | optional | A Claude Code JSONL transcript; its assistant text is recorded as replies |
 | `tool_name` | tool | `bash` / `shell` / `exec_command` / `exec` / `powershell` / `terminal` / `sh` / `zsh` are shell commands; anything else is a tool call |
 | `tool_input.command` | shell | Also accepted: `tool_input.cmd`, top-level `command` |
 | `tool_input` | tool | Recorded as the tool's JSON input |
@@ -311,8 +320,8 @@ npm test -- --grep checkout
   is written once and never rewritten.
 - **IDs.** Each entry carries the harness's message or tool-call ID, so it stays stable
   and unique within the session.
-- **Clipping.** Prompt text, tool input and output stop at `maxOutput`, and the entry
-  says exactly how many characters were dropped. Nothing vanishes quietly.
+- **Clipping.** Prompt and reply text, tool input and output stop at `maxOutput`, and the
+  entry says exactly how many characters were dropped. Nothing vanishes quietly.
 - **Fences.** A prompt containing a code fence gets a longer fence, so it cannot break
   the document.
 - **Blanks and leftovers.** Empty output becomes `(no output)` instead of an invisible
@@ -326,6 +335,7 @@ of an entry is the whole story:
 | Entry line | Means |
 | :--- | :--- |
 | `💬 23:17:04 IST · 82424858` | a prompt; not a tool call, so it has no status |
+| `🤖 23:17:09 IST · 82429120` | text from the agent, between tool calls or at the end of a turn; no status either |
 | `✅ 23:17:05 IST · 1.42 s · call_01` | the harness reported the call finished |
 | `❌ 23:17:05 IST · 2m 00s · call_02` | the harness reported a failure, interrupt, permission denial or error object |
 | `⚠️ 23:17:07 IST · — · call_03` | announced, then the turn ended with no result: the input is kept, the output is not invented |
@@ -338,16 +348,17 @@ as an ordinary `PostToolUse` and stays completed, with the error in the output.
 ### The HTML page
 
 **A view, not a second record.** One file, no JavaScript, no network requests, no remote
-fonts, and one look: dark, like the terminal the work happened in. It is rewritten under
-a short per-page lock, so parallel tool calls cannot corrupt it.
+fonts, and one look: dark, like the terminal the work happened in. A new card replaces
+only the end of the file, under a short per-page lock, so parallel tool calls cannot
+corrupt it and an entry costs the same on a 100 MB page as on an empty one.
 
 ```bash
 session-ledger render --dir ~/session-logs   # restyle every page in place
 ```
 
-`render` swaps the stylesheet, the theme attributes and the one-line description, leaves
-entries untouched, and takes the same lock the hooks take — safe while a session is
-live. An entry is never re-parsed or reordered.
+`render` swaps the stylesheet, the theme attributes, the layout and the one-line
+description, leaves entries untouched, and takes the same lock the hooks take — safe
+while a session is live. An entry is never re-parsed or reordered.
 
 ### Timezones
 
@@ -370,6 +381,7 @@ abbreviations like `IST` stay unambiguous.
 | `scope` | `--scope` · `SESSION_LEDGER_SCOPE` | every session | Record only under this path |
 | `maxOutput` | `--max-output` · `SESSION_LEDGER_MAX_OUTPUT` | `20000` | Characters kept per field |
 | `prompts` | `--no-prompts` · `SESSION_LEDGER_PROMPTS` | `true` | Record user prompts |
+| `replies` | `--no-replies` · `SESSION_LEDGER_REPLIES` | `true` | Record what the agent says |
 | `tools` | `--no-tools` · `SESSION_LEDGER_TOOLS` | `true` | Record non-shell tools; shell commands always |
 | `html` | `--no-html` · `SESSION_LEDGER_HTML` | `true` | `false` skips the page |
 
@@ -378,7 +390,7 @@ to change:
 
 ```json
 { "dir": "~/session-logs", "timezone": "Asia/Kolkata", "scope": "~/code",
-  "maxOutput": 20000, "prompts": true, "tools": true, "html": true }
+  "maxOutput": 20000, "prompts": true, "replies": true, "tools": true, "html": true }
 ```
 
 Six details that save an afternoon:
@@ -413,7 +425,7 @@ stderr. Only a genuine write failure — permissions, disk full — exits `1`, a
 the path that failed.
 
 `hook` and `show-config` accept `--dir`, `--tz`, `--scope`, `--max-output`,
-`--no-prompts`, `--no-tools`, `--no-html` and `--config`; `hook` also takes
+`--no-prompts`, `--no-replies`, `--no-tools`, `--no-html` and `--config`; `hook` also takes
 `--harness <label>`, and `render` reads `--dir` and `--config`.
 
 ---
@@ -425,7 +437,7 @@ JSON object and exits.
 
 ```
 harness ──JSON──▶ session-ledger hook ┬──▶ <date>-<session>.md     append-only
-                                      └──▶ <date>-<session>.html   rewritten, locked
+                                      └──▶ <date>-<session>.html   tail replaced, locked
 ```
 
 `core/normalize.js` is the only file that knows a harness's payload shape. Everything
@@ -437,12 +449,12 @@ locking — is shared, which is why a new harness is one function rather than a 
 ## Privacy
 
 > [!CAUTION]
-> Prompts, tool inputs and outputs are recorded **verbatim**, with no redaction. A
+> Prompts, replies, tool inputs and outputs are recorded **verbatim**, with no redaction. A
 > `curl -H "Authorization: Bearer …"` and a pasted API key both land on disk in full.
 
 - Keep the output directory out of version control.
-- Use `scope` to record only the projects you intend to audit; `--no-prompts` and
-  `--no-tools` narrow what is captured.
+- Use `scope` to record only the projects you intend to audit; `--no-prompts`,
+  `--no-replies` and `--no-tools` narrow what is captured.
 - Treat the log directory as at least as sensitive as your shell history — it also holds
   what you asked and what the agent read.
 
@@ -458,7 +470,7 @@ it nowhere.
 | Harness | Known gaps |
 | :--- | :--- |
 | **OpenCode 2.x** | Duration includes manual-approval wait; the timestamp is the request time, not process spawn |
-| **Claude Code** | Hooks must be trusted and enabled; only the events you configure are recorded |
+| **Claude Code** | Hooks must be trusted and enabled; only the events you configure are recorded; subagent text is left out; text that never reaches the transcript cannot be recorded; a session that gains the hook part-way starts from that point |
 | **Cursor** | Requires a valid JSON reply on permission hooks |
 | **Codex** | No failure event and no `duration_ms`; `apply_patch` has no result hook, so it lands unconfirmed at turn end |
 | **Anything else** | Only what the harness emits; no prompt event means no prompt entries |
@@ -472,8 +484,12 @@ it nowhere.
   hook fires will differ from what the ledger shows.
 - Subagent turns appear only if the harness routes their tool calls through the same hook
   events.
-- The HTML page loses an entry if a process is killed while holding its lock; the
-  markdown is never locked and never loses one.
+- A process killed while writing a card costs the page that card: the next entry drops
+  the partial card, keeps the rest and warns. Its lock names its owner, so nobody waits
+  for a dead process. If two writers clear that lock at once the page can lose one entry.
+  The markdown is never locked and never loses one.
+- A page cut back to before its first card cannot be rebuilt: `hook` exits `1` and names it.
+- Binary data such as a base64 image is named and sized, not stored.
 - An `.html` keeps the stylesheet it was created with until you run
   `session-ledger render`, and its header card keeps its original wording.
 - There is no rotation or retention policy. One file per session, forever.
@@ -495,6 +511,7 @@ and it prints both.
 | No file in OpenCode | The plugin was not reloaded, or failed to load | `opencode api post /api/location/reload`; import `entry.mjs`, not `plugin.js` |
 | Tools missing | The hook matcher is narrower than `*` | Use `"matcher": "*"` (Claude Code, Codex) or omit it (Cursor) |
 | Prompts only | Only prompt hooks were wired | Add the before and after tool events too |
+| No replies | The `Stop` hook is not wired | Add `Stop`; replies start from the next turn |
 | Every call twice | Hooks configured globally **and** in a project's `.claude/settings.json` | Keep one of the two |
 | Wrong clock | `timezone` left at the machine default | Pin it: `--tz Asia/Kolkata`, or the config file |
 | Duration is `—` | The harness sent no start event, so there is nothing to measure from | Expected for after-only harnesses |
@@ -505,7 +522,7 @@ and it prints both.
 ## Development
 
 ```bash
-node --test tests/          # 43 tests: unit + end-to-end, no dependencies
+node --test tests/          # 69 tests: unit + end-to-end, no dependencies
 ```
 
 ```

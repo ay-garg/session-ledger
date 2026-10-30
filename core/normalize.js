@@ -18,7 +18,7 @@ const TURN_END = /^(stop|session_?end)$/i
  *   | { kind: "prompt", session: object, entry: object }
  *   | { kind: "start", session: object, key: string, started: Date, pending: object }
  *   | { kind: "end", session: object, key: string, entry: object }
- *   | { kind: "flush", session: object }}
+ *   | { kind: "flush", session: object, reply: object | null }}
  */
 export function normalize(payload, options = {}) {
   const now = options.now ?? new Date()
@@ -41,6 +41,7 @@ export function normalize(payload, options = {}) {
     directory: base,
     started: now,
     timezone: options.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+    transcript: firstString(raw.transcript_path),
   }
 
   if (PROMPT.test(event)) {
@@ -64,7 +65,10 @@ export function normalize(payload, options = {}) {
     }
   }
 
-  if (TURN_END.test(event)) return { kind: "flush", session }
+  if (TURN_END.test(event)) {
+    const last = firstString(raw.last_assistant_message)
+    return { kind: "flush", session, reply: last.trim() === "" ? null : replyEntry(last, "", now, base, maxOutput) }
+  }
 
   if (!START.test(event) && !END.test(event)) return { kind: "ignore" }
 
@@ -148,6 +152,38 @@ function promptText(raw) {
   if (typeof candidate === "string") return candidate
   if (candidate && typeof candidate === "object") return textOf(candidate)
   return ""
+}
+
+/** Never keyed on prompt_id: Stop carries it too, and it would repeat the prompt's ID. */
+function replyEntry(text, id, at, cwd, maxOutput) {
+  const { body, truncated } = clip(text.trimEnd(), maxOutput)
+  return { kind: "reply", id: entryID(id, at), at, durationMs: null, status: "completed", reply: body, cwd, output: "", truncated }
+}
+
+/**
+ * Stop hands over only a turn's last message; everything said between tool calls is
+ * in the Claude Code transcript. Input: whole new lines of it. Output: reply entries.
+ */
+export function transcriptReplies(lines, session, maxOutput = 20_000) {
+  const replies = []
+  for (const line of lines.split("\n")) {
+    const row = parseLine(line)
+    if (row?.type !== "assistant" || row.isSidechain || !Array.isArray(row.message?.content)) continue
+    const at = new Date(row.timestamp ?? Date.now())
+    for (const block of row.message.content) {
+      if (block.type !== "text" || block.text.trim() === "") continue
+      replies.push(replyEntry(block.text, firstString(row.uuid), at, session.directory, maxOutput))
+    }
+  }
+  return replies
+}
+
+function parseLine(line) {
+  try {
+    return JSON.parse(line)
+  } catch {
+    return null
+  }
 }
 
 function entryID(id, now) {

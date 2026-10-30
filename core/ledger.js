@@ -8,10 +8,10 @@ export const DEFAULT_MAX_OUTPUT = 20_000
 
 /**
  * @typedef {"completed" | "failed" | "unconfirmed"} Status
- * @typedef {"command" | "tool" | "prompt"} Kind
+ * @typedef {"command" | "tool" | "prompt" | "reply"} Kind
  *
  * @typedef {object} Entry
- * @property {Kind} kind    Shell command, any other tool/MCP call, or a user prompt.
+ * @property {Kind} kind    Shell command, any other tool/MCP call, a user prompt, or the agent's reply.
  * @property {string} id        Stable, unique within the session. Never reused.
  * @property {Date} at          When the command was requested.
  * @property {number | null} durationMs  null when the harness does not report it.
@@ -19,6 +19,7 @@ export const DEFAULT_MAX_OUTPUT = 20_000
  * @property {string} command   Shell command line (kind "command" only).
  * @property {string} [tool]    Harness tool name, including MCP tools (kind "tool").
  * @property {string} [prompt]  User prompt text (kind "prompt").
+ * @property {string} [reply]   Text the agent wrote (kind "reply").
  * @property {string} cwd
  * @property {string} output
  * @property {string} [input]   Tool arguments, rendered (kind "tool").
@@ -81,11 +82,11 @@ export function zoneOffset(timezone, at) {
 
 export function duration(ms) {
   if (ms === null || ms === undefined) return "—"
-  if (ms < 1000) return `${Math.max(0, Math.round(ms))} ms`
-  if (ms < 60_000) return `${(ms / 1000).toFixed(2)} s`
-  const m = Math.floor(ms / 60_000)
-  const s = Math.round((ms % 60_000) / 1000)
-  return `${m}m ${String(s).padStart(2, "0")}s`
+  // Round before picking the unit, or 119.6 s reads as "1m 60s".
+  if (Math.round(ms) < 1000) return `${Math.max(0, Math.round(ms))} ms`
+  if (Math.round(ms / 10) < 6000) return `${(ms / 1000).toFixed(2)} s`
+  const seconds = Math.round(ms / 1000)
+  return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`
 }
 
 /** Fence longer than any backtick run inside `body`, so output can never break out. */
@@ -120,29 +121,54 @@ export function textOf(value) {
   if (value === null || value === undefined) return ""
   if (typeof value === "string") return maybeJson(value)
   if (typeof value !== "object") return String(value)
-  if (Array.isArray(value)) return joinParts(value) || dump(value)
+  if (Array.isArray(value)) return value.some(isText) ? joinParts(value) : dump(value)
   if (typeof value.stdout === "string" || typeof value.stderr === "string") {
-    return [value.stdout ?? "", value.stderr ?? ""].filter((s) => s.trim() !== "").join("\n")
+    const { stdout = "", stderr = "", ...rest } = value
+    return withRest([stdout, stderr].filter((s) => s.trim() !== "").join("\n"), rest)
   }
   // Claude Code's Read replies with the file body under file.content.
   if (value.file && typeof value.file.content === "string") return value.file.content
+  // Claude Code's Edit and Write repeat the whole old file; the patch says what changed.
+  if ("originalFile" in value) {
+    const { originalFile, ...rest } = value
+    return dump(rest)
+  }
   for (const key of ["output", "content", "text", "message", "result"]) {
     const found = value[key]
-    if (typeof found === "string" && found !== "") return maybeJson(found)
-    if (Array.isArray(found)) {
-      const joined = joinParts(found)
-      if (joined !== "") return joined
-    }
+    const { [key]: _, ...rest } = value
+    if (typeof found === "string" && found !== "") return withRest(maybeJson(found), rest)
+    if (Array.isArray(found) && found.some(isText)) return withRest(joinParts(found), rest)
   }
   return dump(value)
-} 
+}
+
+const isText = (part) =>
+  typeof part === "string" || (typeof part?.text === "string" && Object.keys(part).every((key) => key === "type" || key === "text"))
 
 const joinParts = (parts) =>
-  parts.map((part) => (typeof part === "string" ? part : part?.text ?? "")).filter(Boolean).join("\n")
+  parts.map((part) => (typeof part === "string" ? part : isText(part) ? part.text : dump(part))).filter(Boolean).join("\n")
+
+// `exit_code: 0` or `interrupted: false` on every call would bury the output.
+const saysSomething = ([key, value]) =>
+  (typeof value === "object" && value !== null ? Object.keys(value).length > 0 : Boolean(value)) &&
+  !(key === "type" && value === "text")
+
+/** The readable part first, then whatever else the tool said, so nothing is lost. */
+function withRest(text, rest) {
+  const kept = Object.entries(rest).filter(saysSomething)
+  return [text, kept.length > 0 ? dump(Object.fromEntries(kept)) : ""].filter(Boolean).join("\n\n")
+}
+
+const BINARY = /^[A-Za-z0-9+/=]+$/
+
+const nameBinary = (_, item) =>
+  typeof item === "string" && item.length > 1024 && BINARY.test(item)
+    ? `[${item.length.toLocaleString("en-US")} characters of binary data not kept]`
+    : item
 
 function dump(value) {
   try {
-    return JSON.stringify(value, null, 2)
+    return JSON.stringify(value, nameBinary, 2)
   } catch {
     return String(value)
   }

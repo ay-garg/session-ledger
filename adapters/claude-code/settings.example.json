@@ -42,6 +42,16 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code"
+          }
+        ]
+      }
     ]
   }
 }

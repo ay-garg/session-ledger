@@ -27,8 +27,8 @@ export function header(session) {
     `| **Format** | session-ledger \`${VERSION}\` · schema ${SCHEMA} |`,
     "",
     "> [!TIP]",
-    "> Append-only record of every prompt, command and tool call in this session, in order.",
-    "> 💬 is a user prompt, a `bash` block is a shell command with its `text` output,",
+    "> Append-only record of every prompt, reply, command and tool call in this session, in order.",
+    "> 💬 is a user prompt, 🤖 is text from the agent, a `bash` block is a shell command with its `text` output,",
     "> 🛠 is any other tool or MCP call with its input and output, and ⚠️ marks a call",
     "> whose result the harness never reported. Entry IDs are stable and never reused.",
     "",
@@ -39,7 +39,7 @@ export function header(session) {
 }
 
 export function entry(e, session) {
-  if (e.kind === "prompt") return promptEntry(e, session)
+  if (e.kind === "prompt" || e.kind === "reply") return messageEntry(e, session)
   if (e.kind === "tool") return toolEntry(e, session)
   return commandEntry(e, session)
 }
@@ -70,13 +70,15 @@ function toolEntry(e, session) {
   ].join("\n")
 }
 
-function promptEntry(e, session) {
+function messageEntry(e, session) {
   const at = parts(e.at, session.timezone)
   const tz = zoneName(session.timezone, e.at)
   const where = e.cwd && e.cwd !== session.directory ? ` · \`${cell(e.cwd)}\`` : ""
-  const body = e.truncated > 0 ? `${(e.prompt ?? "").replace(/\n+$/, "")}\n\n${note(e.truncated)}` : e.prompt ?? ""
+  const mark = e.kind === "reply" ? "🤖" : "💬"
+  const text = (e.kind === "reply" ? e.reply : e.prompt) ?? ""
+  const body = e.truncated > 0 ? `${text.replace(/\n+$/, "")}\n\n${note(e.truncated)}` : text
 
-  return [`### 💬 ${at.time} ${tz} · \`${e.id}\`${where}`, "", fence(body, "text"), "", ""].join("\n")
+  return [`### ${mark} ${at.time} ${tz} · \`${e.id}\`${where}`, "", fence(body, "text"), "", ""].join("\n")
 }
 
 function headline(e, session, extra = "") {

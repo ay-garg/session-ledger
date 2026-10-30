@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import { clip, duration, fence, parts, textOf, zoneName, zoneOffset } from "../core/ledger.js"
 import { entry as markdownEntry, header } from "../core/markdown.js"
-import { card, stats } from "../core/html.js"
+import { CSS, card, stats } from "../core/html.js"
 
 const session = {
   id: "ses_test",
@@ -121,6 +121,38 @@ test("truncated tool input is disclosed", () => {
   assert.match(md, /42 characters truncated/)
 })
 
+test("truncated tool input is disclosed on the page too", () => {
+  const html = card({ ...entry, kind: "tool", tool: "Write", command: "", input: "x", inputTruncated: 42 }, session)
+  assert.match(html, /42 characters truncated/)
+})
+
+test("a reply gets its own card, with no status mark, and is counted", () => {
+  const reply = { kind: "reply", id: "cafe0002", at: entry.at, durationMs: null, status: "completed", reply: "All done", cwd: "/work", output: "", truncated: 0 }
+  const md = markdownEntry(reply, session)
+  assert.match(md, /^### 🤖 21:00:05 IST · `cafe0002`$/m)
+  assert.match(md, /```text\nAll done\n```/)
+
+  const html = card(reply, session)
+  assert.match(html, /data-kind="reply"/)
+  assert.match(html, /🤖 reply/)
+  assert.match(html, /All done/)
+  assert.doesNotMatch(html, /✓ completed/)
+  assert.match(stats(html), /1 event/)
+  assert.match(stats(html), /1 reply/)
+})
+
+test("an Edit reply keeps the patch, not a copy of the whole file", () => {
+  const text = textOf({
+    filePath: "/work/a.js",
+    oldString: "a",
+    newString: "b",
+    originalFile: "the whole file",
+    structuredPatch: [{ oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: ["-a", "+b"] }],
+  })
+  assert.match(text, /"\+b"/)
+  assert.doesNotMatch(text, /the whole file/)
+})
+
 test("the html card carries the entry kind", () => {
   assert.match(card({ ...entry, kind: "tool", tool: "Read", input: "{}" }, session), /data-kind="tool"/)
   assert.match(card({ ...entry, kind: "prompt", prompt: "hi" }, session), /data-kind="prompt"/)
@@ -137,6 +169,51 @@ test("duration reads well at every scale", () => {
   assert.equal(duration(42), "42 ms")
   assert.equal(duration(1780), "1.78 s")
   assert.equal(duration(125_000), "2m 05s")
+})
+
+test("duration rounding never reads 60 of anything", () => {
+  assert.equal(duration(119_600), "2m 00s")
+  assert.equal(duration(59_999), "1m 00s")
+  assert.equal(duration(999.6), "1.00 s")
+})
+
+test("unwrapping keeps every field that says something", () => {
+  assert.match(textOf({ message: "ok", items: ["kept"] }), /^ok\n\n[\s\S]*"kept"/)
+  assert.match(textOf(JSON.stringify({ result: "ok", rows: ["kept"] })), /^ok\n\n[\s\S]*"kept"/)
+  assert.match(textOf({ stdout: "out", stderr: "", backgroundTaskId: "bash_1" }), /^out\n\n[\s\S]*"backgroundTaskId": "bash_1"/)
+  assert.match(textOf({ output: "failed", exit_code: 2 }), /"exit_code": 2/)
+})
+
+test("fields that are empty or zero stay out of the way", () => {
+  assert.equal(textOf({ stdout: "out", stderr: "", interrupted: false, isImage: false }), "out")
+  assert.equal(textOf({ output: "hi\n", exit_code: 0 }), "hi\n")
+  assert.equal(textOf({ content: "body", filenames: [] }), "body")
+  assert.equal(textOf({ type: "text", text: "body" }), "body")
+})
+
+test("a part of a result that is not text is kept beside the text", () => {
+  const text = textOf([{ type: "text", text: "ok" }, { type: "resource", uri: "kept" }])
+  assert.match(text, /^ok\n/)
+  assert.match(text, /"uri": "kept"/)
+  assert.equal(textOf([{ id: 1 }]), '[\n  {\n    "id": 1\n  }\n]')
+})
+
+test("binary data is named, not pasted", () => {
+  const data = "QUJD".repeat(2000)
+  for (const value of [
+    [{ type: "text", text: "shot" }, { type: "image", source: { type: "base64", media_type: "image/png", data } }],
+    { type: "image", file: { base64: data, type: "image/png" } },
+  ]) {
+    const text = textOf(value)
+    assert.match(text, /8,000 characters of binary data not kept/)
+    assert.doesNotMatch(text, /QUJDQUJD/)
+  }
+  assert.match(textOf({ type: "image", file: { base64: data, type: "image/png" } }), /image\/png/)
+})
+
+test("long output wraps and is shown in full on the page", () => {
+  assert.match(CSS, /pre\.out\{[^}]*white-space:pre-wrap/)
+  assert.doesNotMatch(CSS, /pre\.out\{[^}]*max-height/)
 })
 
 test("output shapes from different harnesses are unwrapped", () => {

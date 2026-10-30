@@ -85,6 +85,7 @@ export function resolveConfig(overrides = {}) {
 
   const html = flag(pick("html", overrides.html, process.env.SESSION_LEDGER_HTML, values.html, true))
   const prompts = flag(pick("prompts", overrides.prompts, process.env.SESSION_LEDGER_PROMPTS, values.prompts, true))
+  const replies = flag(pick("replies", overrides.replies, process.env.SESSION_LEDGER_REPLIES, values.replies, true))
   const tools = flag(pick("tools", overrides.tools, process.env.SESSION_LEDGER_TOOLS, values.tools, true))
 
   return {
@@ -94,6 +95,7 @@ export function resolveConfig(overrides = {}) {
     maxOutput: Number.isFinite(maxOutput) && maxOutput > 0 ? maxOutput : DEFAULT_MAX_OUTPUT,
     html,
     prompts,
+    replies,
     tools,
     sources,
     configPath: path,
@@ -108,7 +110,7 @@ export function inScope(config, directory) {
 }
 
 export function describeConfig(config) {
-  const rows = ["dir", "timezone", "scope", "maxOutput", "html", "prompts", "tools"].map((key) => ({
+  const rows = ["dir", "timezone", "scope", "maxOutput", "html", "prompts", "replies", "tools"].map((key) => ({
     key,
     value: config[key] === "" ? "(every session)" : String(config[key]),
     source: config.sources[key],

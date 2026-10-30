@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
+import { mkdir, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { VERSION } from "../core/ledger.js"
-import { CSS } from "../core/html.js"
+import { upgrade } from "../core/html.js"
 import { describeConfig, inScope, resolveConfig } from "../core/config.js"
-import { needsPermissionReply, normalize } from "../core/normalize.js"
-import { record, withLock } from "../core/store.js"
+import { needsPermissionReply, normalize, transcriptReplies } from "../core/normalize.js"
+import { record, replaceFile, withLock } from "../core/store.js"
 
 // The single entry point every harness calls. It only ever reads a JSON event on
 // stdin, so a harness needs no SDK, no plugin API and no shared process — just the
@@ -25,13 +25,14 @@ Options (also honoured by show-config):
   --max-output <chars>  text kept per prompt/input/output     env SESSION_LEDGER_MAX_OUTPUT
   --harness <name>      label shown in the header (claude|codex|cursor|...)
   --no-prompts          do not record user prompts           env SESSION_LEDGER_PROMPTS
+  --no-replies          do not record the agent's replies    env SESSION_LEDGER_REPLIES
   --no-tools            record shell only, not other tools   env SESSION_LEDGER_TOOLS
   --no-html             skip the HTML page                  env SESSION_LEDGER_HTML
   --config <path>       alternate config file
 
 Config file: ~/.config/session-ledger/config.json
   { "dir": "~/logs", "timezone": "Europe/Berlin", "scope": "~/code",
-    "maxOutput": 20000, "prompts": true, "tools": true, "html": true }
+    "maxOutput": 20000, "prompts": true, "replies": true, "tools": true, "html": true }
 `
 
 const main = async () => {
@@ -71,7 +72,9 @@ const main = async () => {
 
     if (result.kind === "start") {
       // Out-of-scope sessions never even get a pending file.
-      if (inScope(config, result.session.directory)) await remember(config, result)
+      if (!inScope(config, result.session.directory)) return
+      await remember(config, result)
+      await recordReplies(config, result.session)
       return
     }
     if (result.kind === "ignore") return
@@ -79,12 +82,14 @@ const main = async () => {
     if (result.kind === "flush") {
       if (!inScope(config, result.session.directory)) return
       await flushPending(config, result.session)
+      await recordReplies(config, result.session, result.reply)
       return
     }
 
     if (result.kind === "prompt") {
-      if (!config.prompts || !inScope(config, result.session.directory)) return
-      await record(result.session, result.entry, config)
+      if (!inScope(config, result.session.directory)) return
+      await recordReplies(config, result.session)
+      if (config.prompts) await record(result.session, result.entry, config)
       return
     }
 
@@ -97,6 +102,8 @@ const main = async () => {
       if (pending.harness && !options.harness) result.session.harness = pending.harness
     }
     if (!inScope(config, result.session.directory)) return
+    // The transcript can lag the tool's start, and this entry is the one it should precede.
+    await recordReplies(config, result.session)
     if (result.entry.kind === "tool" && !config.tools) return
 
     result.session.started = new Date(pending?.started ?? result.entry.at)
@@ -119,17 +126,9 @@ async function restyle(dir) {
     // Same lock the hooks take, so a live session cannot lose an entry to this.
     const changed = await withLock(file, async () => {
       const html = await readFile(file, "utf8")
-      // A function replacement, so a stylesheet containing `$&` cannot be expanded.
-      let next = html.replace(/<style>[\s\S]*?<\/style>/, () => `<style>${CSS}</style>`)
-      // Pages written when the palette followed the OS still say so.
-      next = next
-        .replace(/<meta name="color-scheme" content="[^"]*">/, '<meta name="color-scheme" content="dark">')
-        .replace(/ data-theme="[^"]*"/, "")
-        .replace(/<html([^>]*)>/, (_, attrs) => `<html${attrs} data-theme="dark">`)
-      // Older pages describe themselves in words the current skeleton no longer uses.
-      next = next.replace("append-only command record</p>", "append-only record of prompts, commands and tool calls</p>")
+      const next = upgrade(html)
       if (next === html) return false
-      await writeFile(file, next, "utf8")
+      await replaceFile(file, next)
       return true
     })
     if (changed) count++
@@ -150,6 +149,7 @@ function parseFlags(args) {
     else if (arg === "--config") process.env.SESSION_LEDGER_CONFIG = next()
     else if (arg === "--no-html") out.html = false
     else if (arg === "--no-prompts") out.prompts = false
+    else if (arg === "--no-replies") out.replies = false
     else if (arg === "--no-tools") out.tools = false
   }
   return out
@@ -174,6 +174,48 @@ const parse = (text) => {
 
 const stateDir = (config) => join(config.dir, ".state", "pending")
 const slot = (key) => key.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-120)
+
+// Stop reports only a turn's last message and can beat that message to the transcript,
+// so the transcript fills in what came before it and `last` stops it being written twice.
+async function recordReplies(config, session, final = null) {
+  if (!config.replies) return
+  if (!session.transcript) {
+    if (final) await record(session, final, config)
+    return
+  }
+  const dir = join(config.dir, ".state", "replies")
+  await mkdir(dir, { recursive: true })
+  const file = join(dir, `${slot(session.id)}.json`)
+  // Parallel tool calls land together; the lock lets each transcript line be read once.
+  await withLock(file, async () => {
+    const seen = JSON.parse(await readFile(file, "utf8").catch(() => "null"))
+    const { lines, offset } = await newLines(session.transcript, seen)
+    for (const reply of transcriptReplies(lines, session, config.maxOutput)) {
+      if (reply.reply !== seen?.last && reply.reply !== final?.reply) await record(session, reply, config)
+    }
+    if (final) await record(session, final, config)
+    await replaceFile(file, JSON.stringify({ path: session.transcript, offset, last: final?.reply ?? seen?.last }))
+  })
+  await sweep(dir)
+}
+
+// Only what was added since last time, so a long session costs no more than a short
+// one. A session first seen part-way through starts here and now: its older replies
+// have no place in a file that is append-only.
+async function newLines(path, seen) {
+  const handle = await open(path, "r").catch(() => null)
+  if (!handle) return { lines: "", offset: 0 }
+  try {
+    const { size } = await handle.stat()
+    const start = seen?.path === path && seen.offset <= size ? seen.offset : size
+    const { buffer } = await handle.read(Buffer.alloc(size - start), 0, size - start, start)
+    // A line still being written is picked up next time.
+    const end = buffer.lastIndexOf("\n") + 1
+    return { lines: buffer.toString("utf8", 0, end), offset: start + end }
+  } finally {
+    await handle.close()
+  }
+}
 
 async function remember(config, result) {
   const dir = stateDir(config)

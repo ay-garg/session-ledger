@@ -404,8 +404,8 @@ additionally accepts `--harness <label>`; `render` reads `--dir` and `--config`.
   by the session's first recorded event **in your configured timezone**. A
   session that crosses midnight keeps writing to its original file.
 - **A companion `.html`** with the same content, written alongside it. It is
-  rewritten atomically under a short lock so parallel tool calls cannot corrupt
-  it.
+  rewritten under a short per-page lock, so parallel tool calls — or a `render`
+  run — cannot corrupt it.
 - **The markdown is append-only.** The header is written once; entries are only
   ever appended, in the order they *finished*. That is what makes it an audit
   record rather than a log that can be silently rewritten. A nested call (an

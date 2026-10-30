@@ -124,6 +124,8 @@ export function textOf(value) {
   if (typeof value.stdout === "string" || typeof value.stderr === "string") {
     return [value.stdout ?? "", value.stderr ?? ""].filter((s) => s.trim() !== "").join("\n")
   }
+  // Claude Code's Read replies with the file body under file.content.
+  if (value.file && typeof value.file.content === "string") return value.file.content
   for (const key of ["output", "content", "text", "message", "result"]) {
     const found = value[key]
     if (typeof found === "string" && found !== "") return maybeJson(found)

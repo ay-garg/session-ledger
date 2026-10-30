@@ -145,6 +145,7 @@ test("output shapes from different harnesses are unwrapped", () => {
   assert.equal(textOf('{"exitCode":0,"stdout":"passed","stderr":""}'), "passed")
   assert.equal(textOf({ output: "plain" }), "plain")
   assert.equal(textOf([{ text: "a" }, { text: "b" }]), "a\nb")
+  assert.equal(textOf({ type: "text", file: { content: "const a = 1\n" } }), "const a = 1\n")
   assert.equal(textOf(undefined), "")
 })
 

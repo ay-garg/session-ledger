@@ -1,7 +1,7 @@
 // Shared vocabulary for a session ledger. No harness imports and no build step:
 // plain ESM so `node`, `bun` and any hook runner can load it as-is.
 
-export const VERSION = "0.5.1"
+export const VERSION = "0.6.0"
 export const SCHEMA = 1
 
 export const DEFAULT_MAX_OUTPUT = 20_000

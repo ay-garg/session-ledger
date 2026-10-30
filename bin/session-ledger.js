@@ -121,6 +121,11 @@ async function restyle(dir) {
       const html = await readFile(file, "utf8")
       // A function replacement, so a stylesheet containing `$&` cannot be expanded.
       let next = html.replace(/<style>[\s\S]*?<\/style>/, () => `<style>${CSS}</style>`)
+      // Pages written when the palette followed the OS still say so.
+      next = next
+        .replace(/<meta name="color-scheme" content="[^"]*">/, '<meta name="color-scheme" content="dark">')
+        .replace(/ data-theme="[^"]*"/, "")
+        .replace(/<html([^>]*)>/, (_, attrs) => `<html${attrs} data-theme="dark">`)
       // Older pages describe themselves in words the current skeleton no longer uses.
       next = next.replace("append-only command record</p>", "append-only record of prompts, commands and tool calls</p>")
       if (next === html) return false

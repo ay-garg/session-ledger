@@ -1,208 +1,91 @@
-# session-ledger
+<div align="center">
 
-Every prompt you sent, every command and every tool or MCP call your AI agent
-made — with inputs, outputs and timestamps — written to one markdown file per
-session. Append-only, harness-agnostic, and readable a month later without the
-tool that produced it.
+# 🗂 session-ledger
 
-```
-2026-10-30-ses_e72ab7b8.md     ← the record: plain markdown, survives everything
-2026-10-30-ses_e72ab7b8.html   ← the same session as a readable page
-```
+**Every prompt, every command, every tool call your agent made — in one file per session.**
 
-Works with **OpenCode**, **Claude Code**, **Cursor**, **Codex**, and any other
-harness that can run a command and pipe JSON into it. No SDK, no server, no build
-step — just `node` ≥ 18.
+Append-only, harness-agnostic, and readable a year later without the tool that wrote it.
 
----
+[![version](https://img.shields.io/badge/version-0.6.0-1d1d1f?style=flat-square)](package.json)
+[![node](https://img.shields.io/badge/node-%E2%89%A5%2018-3c873a?style=flat-square)](package.json)
+[![tests](https://img.shields.io/badge/tests-43%20passing-1f8f4e?style=flat-square)](tests)
+[![dependencies](https://img.shields.io/badge/dependencies-0-0071e3?style=flat-square)](package.json)
+[![license](https://img.shields.io/badge/license-MIT-6e6e73?style=flat-square)](LICENSE)
 
-## Contents
+<img src="docs/preview-dark.png" width="880" alt="A session-ledger page: session header with id, directory, timezone and stats; the user's prompt; a completed command with its test output; a failed command; a timed-out call with no result; a one-line footer.">
 
-| Getting started | Harnesses | Reference |
-| :--- | :--- | :--- |
-| [Install](#install) · [Verify it works](#verify-it-works) · [Configure](#configure) | [OpenCode](#opencode-2x) · [Claude Code](#claude-code) · [Cursor](#cursor) · [Codex](#codex) · [Any other](#any-other-harness) | [CLI](#cli-reference) · [What gets written](#what-gets-written) · [Troubleshooting](#troubleshooting) · [Privacy](#privacy) · [Limitations](#limitations-honestly) |
+<sub>A real generated page. No JavaScript, no network requests, one dark theme.</sub>
+
+<sub>[Install](#install) · [Harnesses](#harnesses) · [What gets written](#what-gets-written) · [Configuration](#configuration) · [CLI](#cli) · [Privacy](#privacy) · [Limits](#limits)</sub>
+
+</div>
 
 ---
 
-## What a session looks like
+## Why this exists
 
-````markdown
-# 🗂 Session Ledger
+Your agent already knows what it did. A month later, you don't.
 
-> **rtk and ponytail OpenCode setup**
+Terminal scrollback is gone, chat history lives in a database you can't grep, and the
+one thing you actually need — *what exactly did it run against production?* — was
+never written down. session-ledger writes it down as it happens, in plain text you
+can `cat`, `grep`, `diff` and commit.
 
 | | |
 | :--- | :--- |
-| **Session** | `ses_e72ab7b8bffeg1CEvRlavjurSc` |
-| **Harness** | OpenCode `2.2.3` |
-| **Directory** | `/Users/ayush/claude-code` |
-| **Started** | 2026-10-30 21:09:16 IST |
-| **Timezone** | `Asia/Kolkata` · UTC+05:30 |
-| **Format** | session-ledger `0.5.1` · schema 1 |
-
-### 💬 21:09:14 IST · `msg_01H8`
-
-```text
-Fix the failing checkout test
-```
-
-### ✅ 21:09:16 IST · 5.59 s · `a8efe52e`
-
-```bash
-npm test -- --grep checkout
-```
-
-```text
-12 passing
-```
-
-### ✅ 21:09:22 IST · 38 ms · 🛠 `mcp__github__search_issues`
-
-**Input**
-
-```json
-{
-  "query": "checkout timeout"
-}
-```
-
-**Output**
-
-```text
-#142 Timeout in checkout when cart is empty
-```
-````
-
-The markdown is the record: `cat` it, grep it, diff it, commit it, open it on
-GitHub. The `> [!TIP]` callout (omitted above for length) renders on GitHub,
-VS Code and Obsidian and degrades to a quote everywhere else.
-
-- 💬 **prompts** show what you asked, verbatim, at the time you asked it.
-- **commands** show the `bash` line that ran and its `text` output.
-- 🛠 **tools and MCP calls** show the tool name, its JSON input, and its output.
-
-### Why there is also an HTML file
-
-Markdown cannot do colour, type hierarchy or a terminal block that scrolls. So
-a self-contained HTML page is written next to it: a soft monochrome surface, one
-card per entry, timestamps and IDs in monospace, commands and outputs in dark
-terminal windows (dots and all), and prompts in a speech-bubble style. Light and
-dark both follow `prefers-color-scheme`; no JavaScript, no network requests, no
-remote fonts. The markdown stays canonical; the HTML is a view of it.
-
-The page markup is deliberately plain, so `session-ledger render` can restyle
-pages written by an older version without rereading the markdown.
+| **Records** | 💬 prompts · shell commands · 🛠 every other tool and MCP call |
+| **Writes** | one `.md` per session, plus a self-contained `.html` view |
+| **Needs** | `node` ≥ 18. No SDK, no server, no build step, no dependencies |
+| **Works with** | OpenCode, Claude Code, Cursor, Codex, or anything that can pipe JSON to a hook |
 
 ---
 
 ## Install
 
-Three steps. Nothing is global, nothing is compiled.
-
 ```bash
-# 1. Get the code
 git clone https://github.com/ay-garg/session-ledger.git
 cd session-ledger
-
-# 2. Choose where records go and in whose clock (optional — sensible defaults below)
-mkdir -p ~/.config/session-ledger
-cat > ~/.config/session-ledger/config.json <<'JSON'
-{
-  "dir": "~/session-logs",
-  "timezone": "Asia/Kolkata",
-  "scope": "~/code",
-  "maxOutput": 20000,
-  "prompts": true,
-  "tools": true,
-  "html": true
-}
-JSON
-
-# 3. Check what was resolved, then wire your harness (next section)
 node bin/session-ledger.js show-config
 ```
 
-Requires **Node.js 18 or newer**. There are no dependencies to install and no
-`npm run build`.
+`show-config` prints every resolved setting **and where each value came from** — the
+fastest answer to "why is it writing there?". Nothing is installed globally; every
+example below runs `node bin/session-ledger.js`, or `npm link` once in the clone if
+you would rather type `session-ledger`.
 
-The commands below use `node bin/session-ledger.js` so nothing needs installing.
-If you would rather type `session-ledger`, run `npm link` once in the clone;
-every example then works with `session-ledger hook …` instead.
-
-### Verify it works
-
-Four lines, no harness involved — this is the fastest way to prove the install,
-the timezone and the file naming before you touch any agent config:
+### Verify in 30 seconds, no harness involved
 
 ```bash
 printf '%s' '{"hook_event_name":"UserPromptSubmit","session_id":"demo","cwd":"/tmp","prompt":"Fix the checkout test"}' \
   | node bin/session-ledger.js hook --harness demo --tz Asia/Kolkata --dir /tmp/session-ledger-demo
+
 printf '%s' '{"hook_event_name":"PostToolUse","session_id":"demo","tool_name":"Bash","tool_input":{"command":"echo hello"},"cwd":"/tmp","tool_response":{"stdout":"hello"}}' \
   | node bin/session-ledger.js hook --harness demo --tz Asia/Kolkata --dir /tmp/session-ledger-demo
-ls /tmp/session-ledger-demo
-sed -n '1,40p' /tmp/session-ledger-demo/*.md
+
+open /tmp/session-ledger-demo/*.html   # or: sed -n '1,40p' /tmp/session-ledger-demo/*.md
 ```
 
-You should get `2026-…-demo.md` and `2026-…-demo.html`, one 💬 entry and one ✅
-entry, timestamps in `Asia/Kolkata`. Open the `.html` with `open` to see the page
-before you wire anything. If that works, the only remaining variable is the
-harness wiring below.
+Two files appear: `2026-…-demo.md` and `2026-…-demo.html`, one 💬 and one ✅ entry, in
+`Asia/Kolkata`. If that works, the only remaining variable is the harness wiring.
 
-### Where each value can come from
+---
 
-Later sources are only used when the earlier ones are absent:
+## Harnesses
 
-| Priority | Source | Example |
+| Harness | Support | One-line setup |
 | :--- | :--- | :--- |
-| 1 | CLI flag | `--dir ~/logs --tz Europe/Berlin` |
-| 2 | Environment variable | `SESSION_LEDGER_DIR=~/logs` |
-| 3 | Config file | `~/.config/session-ledger/config.json` |
-| 4 | Default | `~/.session-ledger`, machine timezone, every session |
+| **OpenCode 2.x** | ✅ verified live | plugin import in `~/.config/opencode/plugins/` |
+| **Claude Code** | ✅ verified live | merge `hooks` into `settings.json` |
+| **Codex** | ✅ verified live | copy `adapters/codex/hooks.json` to `~/.codex/` |
+| **Cursor** | ✅ hook payloads | copy `adapters/cursor/hooks.json` to `~/.cursor/` |
+| **Anything else** | ✅ by contract | pipe JSON to `hook` — [see the contract](#any-other-harness) |
 
-`session-ledger show-config` prints every resolved value **and the source it came
-from**, which is the fastest way to answer "why is it writing there?".
-
----
-
-## Configure
-
-| Key | Flag | Env var | Default | Meaning |
-| :--- | :--- | :--- | :--- | :--- |
-| `dir` | `--dir` | `SESSION_LEDGER_DIR` | `~/.session-ledger` | Directory for the `.md` / `.html` files |
-| `timezone` | `--tz` | `SESSION_LEDGER_TZ` | machine zone | IANA zone for every timestamp and the filename date |
-| `scope` | `--scope` | `SESSION_LEDGER_SCOPE` | every session | Only record sessions whose working directory is under this path |
-| `maxOutput` | `--max-output` | `SESSION_LEDGER_MAX_OUTPUT` | `20000` | Characters kept per prompt, tool input and output |
-| `prompts` | `--no-prompts` | `SESSION_LEDGER_PROMPTS` | `true` | Record user prompts |
-| `tools` | `--no-tools` | `SESSION_LEDGER_TOOLS` | `true` | Record non-shell tool and MCP calls; shell commands are always recorded |
-| `html` | `--no-html` | `SESSION_LEDGER_HTML` | `true` | Set `false` / `0` / `no` to skip the HTML page |
-
-Notes that save debugging time:
-
-- `~` is expanded; relative paths are resolved against the process's working
-  directory, which for a hook is the agent's session directory.
-- `timezone` must be an IANA name (`Asia/Kolkata`, `Europe/Berlin`,
-  `America/New_York`). An unknown value prints a warning and falls back to the
-  machine zone rather than writing broken timestamps.
-- `scope` matches the **session directory** recorded by the harness, not the
-  directory a command later `cd`s into. Set it to the parent of your projects,
-  e.g. `~/code`, not to a single repo, if you work across repos.
-- `--harness` is a label for the markdown header only (`claude-code`, `cursor`,
-  `codex`, anything you like). It does not change parsing.
-- `--no-tools` hides other tools but never shell commands, and `--no-prompts`
-  never touches commands or tools. Prompts can be turned off alone if the text
-  you type is more sensitive than the commands the agent runs.
-
-Environment variables are handy for a one-off run; the config file is better for
-hooks, because hook processes do not inherit your shell aliases or exports.
-
----
-
-## Wire your harness
+Every adapter ships in [`adapters/`](adapters). All of them call the same binary; the
+harness JSON differs, the ledger does not.
 
 ### OpenCode 2.x
 
-OpenCode loads plugins from `~/.config/opencode/plugins/`. Keep machine-local
-paths in that wrapper and let the adapter stay in the repo:
+Keep machine-local paths in the wrapper, leave the adapter in the repo:
 
 ```ts
 // ~/.config/opencode/plugins/session-ledger.ts
@@ -212,25 +95,26 @@ process.env.SESSION_LEDGER_SCOPE ??= "/path/to/your/projects"
 export { default } from "/absolute/path/to/session-ledger/adapters/opencode/entry.mjs"
 ```
 
-Import `entry.mjs`, not `plugin.js`: OpenCode's plugin resolver looks for a
-matching `.ts` file when it is given a `.js` import, and fails when the repo has
-none.
+Import `entry.mjs`, **not** `plugin.js`: OpenCode's resolver looks for a neighbouring
+`.ts` file when handed a `.js` import, and fails when the repo has none. Reload with
+`opencode api post /api/location/reload` — a running session keeps its old plugin
+snapshot until then, so do this before judging it.
 
-Reload with `opencode api post /api/location/reload`. A session already running
-keeps its old plugin snapshot until it is reloaded, so do this before you judge
-whether it works. Verify by running a shell command and checking that a `.md`
-appeared in your log directory, then send one message and look for a 💬 entry.
+<details>
+<summary>What the plugin hooks into</summary>
 
-The adapter uses OpenCode's native `session.hook("prompt")` for prompts and
-`execute.before` / `execute.after` for every tool, so it records the exact text,
-tool name, input, output, working directory and measured duration.
+`session.hook("prompt")` for prompts, `execute.before` / `execute.after` for every
+tool. It records the exact text, tool name, input, output, working directory and a
+measured duration.
+
+</details>
 
 ### Claude Code
 
 Merge the `hooks` object from
 [`adapters/claude-code/settings.example.json`](adapters/claude-code/settings.example.json)
-into `~/.claude/settings.json` (or a project's `.claude/settings.json`), replacing
-the placeholder path. The shape:
+into `~/.claude/settings.json` (or a project's `.claude/settings.json`), replacing the
+placeholder path:
 
 ```json
 {
@@ -249,54 +133,18 @@ the placeholder path. The shape:
 }
 ```
 
-The full file ships in the adapter folder; `…` above is only for brevity.
 `"matcher": "*"` makes every tool fire the hook, not just `Bash`; non-shell tools
-become 🛠 entries. Restart Claude Code or open `/hooks` to confirm the hooks
-loaded. Claude Code supplies `duration_ms`, so durations are the tool's own
-measurement, not a wall-clock guess.
+become 🛠 entries. Claude Code supplies `duration_ms`, so durations are the tool's own
+measurement, not a wall-clock guess. Restart, or open `/hooks`, to confirm.
 
-This path is verified live, including headless runs (`claude -p "…"`), where hooks
-fire exactly as they do interactively. If you keep several Claude Code profiles
-via `CLAUDE_CONFIG_DIR` (work, personal, vertex), each profile has its own
-`settings.json` — add the hooks to every profile you want recorded, or to a
-project's `.claude/settings.json` to cover one repo.
-
-### Cursor
-
-Copy [`adapters/cursor/hooks.json`](adapters/cursor/hooks.json) to
-`~/.cursor/hooks.json` for every project, or to `<repo>/.cursor/hooks.json` for
-one project, again replacing the path:
-
-```json
-{
-  "version": 1,
-  "hooks": {
-    "beforeSubmitPrompt": [
-      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
-    ],
-    "preToolUse": [
-      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
-    ],
-    "postToolUse": [ … same command … ],
-    "postToolUseFailure": [ … same command … ]
-  }
-}
-```
-
-No `matcher` means every tool is recorded, including MCP tools. Cursor **blocks
-the tool call if a permission hook prints anything that is not valid JSON**.
-session-ledger detects Cursor's `preToolUse` payload and answers
-`{"permission":"allow"}` before writing anything, so the call proceeds. Do not
-pipe the output of this command anywhere else.
-
-Cursor runs user hooks from `~/.cursor/`, so absolute paths in `hooks.json` are
-the safe choice. Its `tool_output` is a JSON *string*; the ledger unwraps it to
-the readable `stdout` text, and reads `duration` in milliseconds.
+Verified live, including headless `claude -p "…"`. If you run several profiles via
+`CLAUDE_CONFIG_DIR`, each has its own `settings.json` — add the hooks to each one you
+want recorded.
 
 ### Codex
 
-Copy [`adapters/codex/hooks.json`](adapters/codex/hooks.json) to
-`~/.codex/hooks.json` (or `<repo>/.codex/hooks.json`), replacing the path:
+Copy [`adapters/codex/hooks.json`](adapters/codex/hooks.json) to `~/.codex/hooks.json`
+(or `<repo>/.codex/hooks.json`), replacing the path:
 
 ```json
 {
@@ -316,57 +164,201 @@ Copy [`adapters/codex/hooks.json`](adapters/codex/hooks.json) to
 }
 ```
 
-`Stop` is not decoration: Codex fires `PreToolUse` for `apply_patch` but **never
-`PostToolUse`** for it, so a file edit would otherwise vanish from the record.
-At `Stop`, anything that started and never reported back is written with ⚠️ and
-its patch or command line, instead of being dropped.
+`Stop` is not decoration. Codex fires `PreToolUse` for `apply_patch` but **never**
+`PostToolUse` for it, so a file edit would otherwise vanish from the record. At
+`Stop`, anything that started and never reported back is written with ⚠️ and its
+patch, instead of being dropped.
 
-Verified live against Codex 0.165 with a custom provider profile
-(`codex --profile … exec`), including prompt, `Bash`, `apply_patch`, failed
-commands and turn end.
+> [!IMPORTANT]
+> Codex requires hooks to be **trusted** before they run. The first interactive launch
+> shows a *Hooks need review* dialog — choose **Trust all and continue**. Headless runs
+> (`codex exec`) skip untrusted hooks *silently*, so either trust once in the TUI, or
+> add `--dangerously-bypass-hook-trust` to automation that already vets the file.
+> Editing `hooks.json` invalidates the trust, so re-trust after any change.
 
-**Codex requires hooks to be trusted before they run.** The first interactive
-launch shows a *Hooks need review* dialog — choose **Trust all and continue**.
-Headless runs (`codex exec`) skip untrusted hooks **silently**, so either trust
-once in the TUI first, or add `--dangerously-bypass-hook-trust` to automation
-that already vets the file. Editing `hooks.json` invalidates the trust, so
-re-trust after any change.
+Profiles (`$CODEX_HOME/<name>.config.toml`) share one hooks file: `~/.codex/hooks.json`
+covers every profile, including `codex --profile …`. Verified live against Codex 0.165
+with a custom provider profile.
 
-If you use profiles (`$CODEX_HOME/<name>.config.toml`), the hooks file is shared
-across all of them: `~/.codex/hooks.json` applies to every profile, including
-`codex --profile enmaas`.
+### Cursor
 
-Project-local `.codex/hooks.json` only loads when the project's `.codex/` layer
-is trusted.
+Copy [`adapters/cursor/hooks.json`](adapters/cursor/hooks.json) to
+`~/.cursor/hooks.json` for every project, or `<repo>/.cursor/hooks.json` for one:
+
+```json
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
+    ],
+    "preToolUse": [
+      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
+    ],
+    "postToolUse": [ … same command … ],
+    "postToolUseFailure": [ … same command … ]
+  }
+}
+```
+
+No `matcher` means every tool is recorded, MCP tools included.
+
+> [!WARNING]
+> Cursor **blocks the tool call** if a permission hook prints anything that is not
+> valid JSON. session-ledger detects Cursor's `preToolUse` payload and answers
+> `{"permission":"allow"}` before writing anything, so the call proceeds. Do not pipe
+> that command's output anywhere else.
 
 ### Any other harness
 
 If the harness can run a shell command at "prompt submitted", "before tool" and
-"after tool" and sends a JSON object on stdin, it already works. The contract is:
+"after tool", and sends a JSON object on stdin, it already works.
 
 | Field | Required | Notes |
 | :--- | :--- | :--- |
 | `hook_event_name` (or `hookEventName`) | yes | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` for tools; optional `Stop` / `SessionEnd` to flush calls that never reported back |
 | `session_id` | yes | Also accepted: `conversation_id`, `thread_id`, `sessionId` |
 | `prompt` | prompts | Also accepted: `user_prompt`, `userPrompt`, `message`, `text` |
-| `tool_name` | tools | Free-form; `Bash` / `Shell` / `exec_command` / `terminal` / `sh` / `zsh` are treated as shell commands, everything else as a tool call |
+| `tool_name` | tools | `Bash` / `Shell` / `exec_command` / `terminal` / `sh` / `zsh` are shell commands; everything else is a tool call |
 | `tool_input.command` | shell | Also accepted: `tool_input.cmd`, top-level `command` |
 | `tool_input` | tools | Recorded as the tool's JSON input |
 | `cwd` | no | Falls back to `tool_input.working_directory`, `workspace_roots[0]`, process cwd |
 | `tool_response` / `tool_output` / `output` | no | Unwrapped to readable text; JSON strings and `{stdout,stderr}` shapes are understood |
-| `duration_ms` / `duration` | no | Milliseconds. Without it, the start event's timestamp is used to measure |
+| `duration_ms` / `duration` | no | Milliseconds; without it the start event's timestamp measures the call |
 
-A harness with only an "after tool" event and no "before" event still records the
-call; only the duration shows `—`. A harness with no prompt event records
-commands and tools but no 💬 entries.
-
-The command your harness runs is the same one from
-[Verify it works](#verify-it-works) — add `--harness <name>` to label the header,
-and point the hook at every event in the table above.
+An "after tool" event with no "before" still records the call — only the duration
+shows `—`. A harness with no prompt event records commands and tools, but no 💬.
 
 ---
 
-## CLI reference
+## What gets written
+
+One markdown file and one HTML page per session, named
+`<YYYY-MM-DD>-<session-id>`, dated by the first recorded event in your timezone. A
+session that crosses midnight keeps its original file.
+
+````markdown
+# 🗂 Session Ledger
+
+| | |
+| :--- | :--- |
+| **Session** | `ses_9f2c71` |
+| **Harness** | Claude Code |
+| **Directory** | `/Users/ayush/code/checkout-api` |
+| **Started** | 2026-10-30 23:17:04 IST |
+| **Timezone** | `Asia/Kolkata` · UTC+05:30 |
+| **Format** | session-ledger `0.6.0` · schema 1 |
+
+### 💬 23:17:04 IST · `82424858`
+
+```text
+The checkout test is flaky on CI. Find the cause and fix it.
+```
+
+### ✅ 23:17:05 IST · 1.42 s · `call_01`
+
+```bash
+npm test -- --grep checkout
+```
+
+```text
+12 passing (1.4 s)
+```
+````
+
+The markdown is the record: `cat` it, grep it, diff it, commit it, read it on GitHub.
+Entries append in the order they **finished**, so a nested subagent call can land after
+the tools it spawned — its own timestamp still shows when it started. The header is
+written once; entries are never rewritten.
+
+- **Entry IDs** come from the harness's message or tool-call ID, so they are stable and
+  unique within a session.
+- **Nothing is silently truncated.** Prompt text, tool input and output are clipped at
+  `maxOutput`; the entry says exactly how many characters were dropped.
+- **Safe fences.** A prompt containing ```` ``` ```` gets a longer fence instead of
+  breaking the document.
+- **Empty output** is written as `(no output)` rather than an invisible blank.
+- **Turn end flushes the leftovers.** A call the harness never reported back is written
+  as ⚠️, not lost.
+
+### Statuses
+
+`✅ completed` / `❌ failed` describe **the tool call**, not the command's exit code.
+
+| Mark | Means |
+| :--- | :--- |
+| ✅ | The harness reported the call finished |
+| ❌ | The harness reported a failure, interrupt, permission denial or error object |
+| ⚠️ | The harness announced the call, then ended the turn without a result (Codex `apply_patch`); input kept, output not invented |
+| 💬 | A user prompt — not a tool call, so it has no status |
+
+A shell command that exits `1` normally is still ✅, with `Exit code 1` visible in the
+output. Nothing parses exit codes out of free-form text; guessing would be worse than
+not guessing. Codex has no failure hook at all, so a non-zero exit arrives as a normal
+`PostToolUse` and stays ✅ with the error in the output.
+
+### The HTML page
+
+The page next to the markdown is a view, not a second record: one file, no JavaScript,
+no network requests, no remote fonts, and one look — dark, like the terminal the work
+happened in. Nothing follows the operating system theme, so a page looks the same on
+every machine it is opened on. It is rewritten under a short per-page lock, so parallel
+tool calls cannot corrupt it.
+
+```bash
+session-ledger render --dir ~/session-logs   # restyle existing pages in place
+```
+
+`render` swaps the stylesheet, the theme attributes and the one-line description,
+leaves entries untouched, and takes the same lock the hooks take — safe while a
+session is live. An entry is never re-parsed or reordered.
+
+### Timezones
+
+Every timestamp is formatted with an explicit IANA zone through `Intl.DateTimeFormat`,
+never the process's `TZ`. A hook launched from a container running `TZ=UTC` cannot
+shift the record. Each header records the zone name *and* the offset at that instant,
+so DST changes and abbreviations like `IST` stay unambiguous.
+
+---
+
+## Configuration
+
+| Key | Flag | Env var | Default | Meaning |
+| :--- | :--- | :--- | :--- | :--- |
+| `dir` | `--dir` | `SESSION_LEDGER_DIR` | `~/.session-ledger` | Where `.md` / `.html` files go |
+| `timezone` | `--tz` | `SESSION_LEDGER_TZ` | machine zone | IANA zone for timestamps and the filename date |
+| `scope` | `--scope` | `SESSION_LEDGER_SCOPE` | every session | Only record sessions under this path |
+| `maxOutput` | `--max-output` | `SESSION_LEDGER_MAX_OUTPUT` | `20000` | Characters kept per prompt, input and output |
+| `prompts` | `--no-prompts` | `SESSION_LEDGER_PROMPTS` | `true` | Record user prompts |
+| `tools` | `--no-tools` | `SESSION_LEDGER_TOOLS` | `true` | Record non-shell tools; shell commands are always recorded |
+| `html` | `--no-html` | `SESSION_LEDGER_HTML` | `true` | Set `false` / `0` / `no` to skip the page |
+
+Precedence, later only when earlier is absent: **flag → environment → config file →
+default**. The config file lives at `~/.config/session-ledger/config.json`:
+
+```json
+{ "dir": "~/session-logs", "timezone": "Asia/Kolkata", "scope": "~/code",
+  "maxOutput": 20000, "prompts": true, "tools": true, "html": true }
+```
+
+Notes that save debugging time:
+
+- `~` is expanded; relative paths resolve against the hook's working directory, which is
+  the agent's session directory.
+- An unknown `timezone` prints a warning and falls back to the machine zone rather than
+  writing broken timestamps.
+- `scope` matches the **session directory** the harness reports, not a directory a
+  command later `cd`s into. Point it at the parent of your projects.
+- `--harness` is a label for the header only; it does not change parsing.
+- `--no-tools` never hides shell commands, and `--no-prompts` never touches commands or
+  tools. Prompts can be off alone if what you type is more sensitive than what runs.
+- Environment variables suit a one-off run; the config file suits hooks, which do not
+  inherit your shell aliases or exports.
+
+---
+
+## CLI
 
 ```
 session-ledger hook        read one hook event on stdin and append it
@@ -376,96 +368,75 @@ session-ledger help        usage
 session-ledger --version   version
 ```
 
-`hook` exits `0` for normal operation and for malformed or unknown events, and
-writes any complaint to stderr. A logging hook must never break the agent it is
-observing, so a bad event is dropped rather than turned into a failed tool call.
-A genuine write failure (permissions, disk full) exits `1` and says why; it is
-never silent. `show-config` and unknown commands may also exit non-zero.
+`hook` exits `0` for normal operation and for malformed or unknown events, writing any
+complaint to stderr: a logging hook must never break the agent it observes. A genuine
+write failure (permissions, disk full) exits `1` and says which path — never silent.
 
-`render` brings existing pages up to the current look: for every `.html` in the
-output directory it swaps the stylesheet and the one-line description, leaving
-the entries alone. It takes the same per-page lock the hooks take, so it is safe
-to run while a session is live. Pages are never rebuilt from the markdown, so an
-entry is never re-parsed or reordered.
-
-```
-session-ledger render --dir ~/session-logs
-```
-
-Flags accepted by `hook` and `show-config`: `--dir`, `--tz`, `--scope`,
-`--max-output`, `--no-prompts`, `--no-tools`, `--no-html`, `--config`. `hook`
-additionally accepts `--harness <label>`; `render` reads `--dir` and `--config`.
+Flags accepted by `hook` and `show-config`: `--dir`, `--tz`, `--scope`, `--max-output`,
+`--no-prompts`, `--no-tools`, `--no-html`, `--config`. `hook` also accepts
+`--harness <label>`; `render` reads `--dir` and `--config`.
 
 ---
 
-## What gets written
+## How it works
 
-- **One markdown file per session**, named `<YYYY-MM-DD>-<session-id>.md`, dated
-  by the session's first recorded event **in your configured timezone**. A
-  session that crosses midnight keeps writing to its original file.
-- **A companion `.html`** with the same content, written alongside it. It is
-  rewritten under a short per-page lock, so parallel tool calls — or a `render`
-  run — cannot corrupt it.
-- **The markdown is append-only.** The header is written once; entries are only
-  ever appended, in the order they *finished*. That is what makes it an audit
-  record rather than a log that can be silently rewritten. A nested call (an
-  `Agent`/subagent turn) therefore lands after the tools it spawned — its own
-  timestamp still shows when it started.
-- **Entry IDs** are derived from the harness's message/tool-call ID, so they are
-  stable and unique within a session.
-- **Turn end flushes the leftovers.** If a harness ends the turn with a call
-  that never reported a result, it is written as ⚠️ unconfirmed rather than
-  silently lost.
-- **Paths are dated once per session** and reused, so a long session cannot split
-  into two files at midnight.
-- **Prompt text, tool input and output are all clipped** at `maxOutput`
-  characters; the entry says exactly how many characters were dropped, and a
-  clipped tool input gets its own note under **Input**. Nothing is silently
-  truncated.
-- **Empty output** is written as `(no output)` rather than an invisible blank.
-- **Safe fences.** A prompt or command containing ```` ``` ```` gets a longer
-  fence instead of breaking the document.
-
-### Status semantics
-
-`✅ completed` / `❌ failed` describe **the tool call**, not the command's exit
-code:
-
-- `❌ failed` means the harness reported a failure event, an interrupt, a
-  permission denial, or an error object.
-- A shell command that exits `1` normally is still `✅ completed`, with
-  `Exit code 1` and the error text visible in its output. Nothing parses exit
-  codes out of free-form output; guessing there would be worse than not guessing.
-- **Codex has no failure hook**: a non-zero exit arrives as a normal
-  `PostToolUse`, so it stays `✅ completed` and the failure is visible in the
-  output text.
-- `⚠️ unconfirmed` means the harness announced the call but never reported a
-  result — Codex does this for `apply_patch`. The input is kept, the output is
-  not invented, and the entry says so. Nothing about the exit code is guessed.
-- Prompts are marked 💬 instead of a status, because they are not tool calls.
-
-### Timezones
-
-Every timestamp is formatted with an explicit IANA zone via `Intl.DateTimeFormat`
-— never the process's `TZ`. A hook launched from a server or container running
-`TZ=UTC` cannot shift the record. Each header records both the zone name
-(`Asia/Kolkata`) and the offset at that instant (`UTC+05:30`), so daylight-saving
-changes and abbreviations like `IST` are unambiguous.
-
-Default is your machine's zone, resolved at run time; pin it in the config file
-if the ledger must be consistent across machines.
-
-### Reading a ledger
-
-```bash
-cat  OpenCode-Data/2026-10-30-*.md          # the record, top to bottom
-grep '^### 💬' OpenCode-Data/*.md           # every prompt you sent, across sessions
-grep -A3 '🛠 `mcp__' OpenCode-Data/*.md     # every MCP call and its input
-open OpenCode-Data/2026-10-30-*.html        # the same session, as a page
+```
+harness hook ──▶ session-ledger hook ──▶ 2026-10-30-<session>.md     append-only record
+  (JSON stdin)         │
+                       └──────────────▶ 2026-10-30-<session>.html   rewritten view
 ```
 
-A whole session diffs cleanly: the header is stable and entries only append, so
-`git diff` shows exactly what happened between two points in time.
+`core/normalize.js` is the only file that knows any harness's payload shape. Everything
+after it — entry IDs, clipping, fences, status, timezone formatting, file naming,
+locking — is shared, which is why adding a harness takes one function rather than a
+fork.
+
+---
+
+## Privacy
+
+> [!CAUTION]
+> Prompts, tool inputs and outputs are recorded **verbatim**, with no redaction. Secrets
+> land on disk in full: a `curl -H "Authorization: Bearer …"` and a pasted API key are
+> both in the file.
+
+- Keep the output directory out of version control.
+- Use `scope` to limit recording to the projects you intend to audit; `--no-prompts` and
+  `--no-tools` narrow what is captured.
+- Treat the log directory as sensitive as your shell history — arguably more, because it
+  also holds what you asked and what the agent read.
+
+The HTML page makes no network requests and loads no remote fonts, so opening it leaks
+the ledger nowhere.
+
+---
+
+## Limits
+
+| Harness | Verified | Known gaps |
+| :--- | :--- | :--- |
+| OpenCode 2.x | live | Duration includes manual-approval wait; timestamp is request time, not process spawn |
+| Claude Code | live | Hooks must be trusted and enabled; only events you configure are recorded |
+| Cursor | hook payloads | Requires a valid JSON reply on permission hooks |
+| Codex | live | No failure event and no `duration_ms`; `apply_patch` has no result hook, so it lands ⚠️ at turn end |
+| Anything else | by contract | Only what the harness emits; no prompt event means no 💬 entries |
+
+<details>
+<summary>Other deliberate limits</summary>
+
+- Commands run through a wrapper (RTK, `nice`, a shell function) are recorded as the
+  wrapper saw them, not as the deeper process ran them.
+- Tool input is what the harness reports; a tool that mutates arguments after the hook
+  fires will differ from what the ledger shows.
+- Subagent turns appear only if the harness routes their tool calls through the same
+  hook events.
+- The HTML loses an entry if a process is killed while holding its lock; the markdown is
+  never locked and never loses one.
+- An `.html` keeps the stylesheet it was created with until you run
+  `session-ledger render`; the header card keeps its original wording.
+- There is no rotation or retention policy. One file per session, forever.
+
+</details>
 
 ---
 
@@ -474,7 +445,7 @@ A whole session diffs cleanly: the header is stable and entries only append, so
 | Symptom | Likely cause | Fix |
 | :--- | :--- | :--- |
 | No file at all | Session directory outside `scope` | Compare the harness's directory with `show-config`; widen or drop `scope` |
-| No file at all (Cursor) | The permission hook's stdout was piped or swallowed | The command must be run as-is; Cursor needs its `{"permission":"allow"}` reply |
+| No file at all (Cursor) | The permission hook's stdout was piped or swallowed | Run the command as-is; Cursor needs its `{"permission":"allow"}` reply |
 | No file at all (Codex) | Hooks never trusted | Open `/hooks`, review, trust; Codex skips silently until then |
 | No file at all (OpenCode) | Plugin not reloaded, or it failed to load | `opencode api post /api/location/reload`; import `entry.mjs`, not `plugin.js` |
 | Commands recorded, tools missing | Hook matcher is narrower than `*` | Use `"matcher": "*"` (Claude Code, Codex) or omit it (Cursor) |
@@ -482,66 +453,14 @@ A whole session diffs cleanly: the header is stable and entries only append, so
 | Every call appears twice | Hooks configured globally **and** in a project `.claude/settings.json` | Keep one of the two |
 | Wrong clock | `timezone` left at the machine default | Pin it: `--tz Asia/Kolkata` or the config file |
 | Duration shows `—` | The harness sent no start event, so there is nothing to measure from | Expected for after-only harnesses |
-| Page looks like an older version | The stylesheet is written when the page is created | `session-ledger render --dir <dir>` rewrites it in place, entries untouched |
-
-`hook` never fails an agent turn: malformed JSON, unknown events and out-of-scope
-sessions exit `0` after writing a line to stderr. If you see exit `1`, it is a
-real write problem — permissions or disk — and the message says which path.
-
----
-
-## Privacy
-
-The ledger records **prompts, tool inputs and outputs verbatim**. That includes
-everything you typed into the agent, every file path and argument a tool
-received, and everything a command printed. Secrets land on disk in full: a
-`curl -H "Authorization: Bearer …"` and a pasted API key are both recorded.
-There is no redaction.
-
-- Keep the output directory out of version control (`OpenCode-Data/.gitignore`,
-  or wherever you point `dir`).
-- Use `scope` to limit recording to the projects you intend to audit, and
-  `--no-prompts` / `--no-tools` to narrow what is captured.
-- Treat the log directory as sensitive as the shell history it replaces —
-  arguably more so, because it also holds what you asked and what the agent read.
-
-The HTML page makes no network requests and loads no remote fonts, so opening it
-does not leak the ledger anywhere.
-
----
-
-## Limitations, honestly
-
-| Harness | Verified | Known gaps |
-| :--- | :--- | :--- |
-| OpenCode 2.x | yes, live | Duration includes manual-approval wait; timestamp is request time, not process spawn |
-| Claude Code | yes, live | Hooks must be trusted and enabled; only events you configure are recorded |
-| Cursor | yes, hook payloads | Requires a valid JSON reply on permission hooks — the CLI handles it, custom wrappers must too |
-| Codex | yes, live | No failure event and no `duration_ms`; `apply_patch` gets no result hook, so it is recorded as ⚠️ unconfirmed at turn end |
-| Anything else | contract above | Only what the harness emits; no prompt event means no prompt entries |
-
-Other deliberate limits:
-
-- Commands run through a wrapper (RTK, `nice`, a shell function) are recorded as
-  the wrapper saw them, not as the deeper process ran them.
-- Tool input is what the harness reports. A tool that mutates arguments after the
-  hook fires will differ from what the ledger shows.
-- Subagent turns appear only if the harness routes their tool calls through the
-  same hook events.
-- The HTML loses an entry if a process is killed while holding its lock; the
-  markdown is never locked and never loses one.
-- An `.html` keeps the stylesheet it was created with until you run
-  `session-ledger render`, which swaps it for the current one in place. The
-  header card keeps its original wording.
-- There is no rotation or retention policy. One file per session, forever.
+| Page looks like an older version | The stylesheet is written when the page is created | `session-ledger render --dir <dir>` |
 
 ---
 
 ## Development
 
 ```bash
-node --test tests/          # 43 unit + end-to-end tests
-node bin/session-ledger.js show-config
+node --test tests/          # 43 unit + end-to-end tests, no dependencies
 ```
 
 ```
@@ -557,13 +476,15 @@ adapters/claude-code/   settings snippet
 adapters/cursor/        hooks.json
 adapters/codex/         hooks.json
 tests/                  node --test
+docs/                   README screenshots
 ```
 
-Adding a harness means teaching `core/normalize.js` one more payload shape, or —
-if the harness has no hooks — writing an adapter that builds `Session` and
-`Entry` objects and calls `record()` from `core/store.js`. Formatting and file
-writing are shared and should not be duplicated.
+Adding a harness means teaching `core/normalize.js` one more payload shape, or — if the
+harness has no hooks — writing an adapter that builds `Session` and `Entry` objects and
+calls `record()`. Formatting and file writing are shared and should not be duplicated.
+
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

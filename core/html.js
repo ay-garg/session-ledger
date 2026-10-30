@@ -15,42 +15,25 @@ const esc = (s) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
 
-export const CSS = `
-:root{
-  color-scheme:light dark;
-  --page:#f5f5f7; --wash:#ffffff;
-  --card:#fff; --cardhi:#fff;
-  --hair:rgba(0,0,0,.08); --soft:#f2f2f5;
-  --ink:#1d1d1f; --muted:#6e6e73;
-  --glow:rgba(0,113,227,.10);
-  --accent:#0071e3; --accentbg:rgba(0,113,227,.06); --accentline:rgba(0,113,227,.22);
-  --ok:#1f8f4e; --okbg:rgba(52,199,89,.14);
-  --fail:#d70015; --failbg:rgba(255,59,48,.09); --failline:rgba(215,0,21,.20);
-  --warn:#b25000; --warnbg:rgba(255,159,10,.11); --warnline:rgba(178,80,0,.20);
-  --shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 32px -20px rgba(0,0,0,.18);
-  --shadow-hi:0 1px 2px rgba(0,0,0,.05), 0 20px 44px -22px rgba(0,0,0,.24);
-  --term:#12161c; --termink:#e7edf6; --termline:#252b34; --termmute:#8d97a5;
-  --chrome:#1e242c; --chromemute:#9aa5b4;
+const VARS = `
+  --page:#08080a; --wash:#101014;
+  --card:#161617; --cardhi:#1b1b1d;
+  --hair:rgba(255,255,255,.09); --soft:#1d1d1f;
+  --ink:#f5f5f7; --muted:#98989d;
+  --glow:rgba(41,151,255,.16);
+  --accent:#2997ff; --accentbg:rgba(41,151,255,.13); --accentline:rgba(41,151,255,.32);
+  --ok:#30d158; --okbg:rgba(48,209,88,.16);
+  --fail:#ff453a; --failbg:rgba(255,69,58,.12); --failline:rgba(255,69,58,.30);
+  --warn:#ff9f0a; --warnbg:rgba(255,159,10,.10); --warnline:rgba(255,159,10,.28);
+  --shadow:0 1px 2px rgba(0,0,0,.6), 0 12px 32px -20px rgba(0,0,0,.9);
+  --shadow-hi:0 1px 2px rgba(0,0,0,.65), 0 20px 44px -22px rgba(0,0,0,.95);
+  --term:#0c1016; --termink:#e7edf6; --termline:#252b34; --termmute:#8b94a2;
+  --chrome:#1a212a; --chromemute:#8f9aa9;
   --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
   --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Helvetica Neue",Inter,"Segoe UI",system-ui,sans-serif;
-}
-@media (prefers-color-scheme:dark){
-  :root{
-    --page:#08080a; --wash:#101014;
-    --card:#161617; --cardhi:#1b1b1d;
-    --hair:rgba(255,255,255,.09); --soft:#1d1d1f;
-    --ink:#f5f5f7; --muted:#98989d;
-    --glow:rgba(41,151,255,.16);
-    --accent:#2997ff; --accentbg:rgba(41,151,255,.13); --accentline:rgba(41,151,255,.32);
-    --ok:#30d158; --okbg:rgba(48,209,88,.16);
-    --fail:#ff453a; --failbg:rgba(255,69,58,.12); --failline:rgba(255,69,58,.30);
-    --warn:#ff9f0a; --warnbg:rgba(255,159,10,.10); --warnline:rgba(255,159,10,.28);
-    --shadow:0 1px 2px rgba(0,0,0,.6), 0 12px 32px -20px rgba(0,0,0,.9);
-    --shadow-hi:0 1px 2px rgba(0,0,0,.65), 0 20px 44px -22px rgba(0,0,0,.95);
-    --term:#0c1016; --termink:#e7edf6; --termline:#252b34; --termmute:#8b94a2;
-    --chrome:#1a212a; --chromemute:#8f9aa9;
-  }
-}
+`
+
+const RULES = `
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 body{
@@ -76,6 +59,7 @@ dl.meta dd{margin:0;font:12px/1.7 var(--mono);word-break:break-all}
 .chip{font:500 12px/1 var(--sans);padding:7px 13px;border-radius:999px;border:1px solid var(--hair);background:var(--soft);color:var(--muted)}
 .chip.ok{color:var(--ok);background:var(--okbg);border-color:transparent}
 .chip.fail{color:var(--fail);background:var(--failbg);border-color:transparent}
+.chip.unk{color:var(--warn);background:var(--warnbg);border-color:transparent}
 .entry{position:relative;overflow:hidden;padding:0 26px 22px;transition:box-shadow .22s ease,transform .22s ease}
 .entry:hover{box-shadow:var(--shadow-hi)}
 .entry[data-status=failed]{border-color:var(--failline)}
@@ -142,17 +126,19 @@ footer{margin:34px 0 0;color:var(--muted);font:12px/1.6 var(--sans);text-align:c
 }
 `
 
+export const CSS = `:root{color-scheme:dark;${VARS}}` + RULES
+
 export function skeleton(session) {
   const starts = parts(session.started, session.timezone)
   const tz = zoneName(session.timezone, session.started)
   const title = session.title || session.directory.split("/").filter(Boolean).pop() || session.id
 
   return `<!doctype html>
-<html lang="en" data-tz="${esc(session.timezone)}" data-schema="${SCHEMA}">
+<html lang="en" data-tz="${esc(session.timezone)}" data-schema="${SCHEMA}" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark">
 <title>Session Ledger · ${esc(session.id)}</title>
 <style>${CSS}</style>
 </head>
@@ -240,7 +226,7 @@ export function stats(html) {
     commands > 0 ? `<span class="chip ok">${commands} command${commands === 1 ? "" : "s"}</span>` : "",
     tools > 0 ? `<span class="chip">${tools} tool call${tools === 1 ? "" : "s"}</span>` : "",
     failed > 0 ? `<span class="chip fail">${failed} failed</span>` : "",
-    unconfirmed > 0 ? `<span class="chip">${unconfirmed} unconfirmed</span>` : "",
+    unconfirmed > 0 ? `<span class="chip unk">${unconfirmed} unconfirmed</span>` : "",
   ]
     .filter(Boolean)
     .join("")

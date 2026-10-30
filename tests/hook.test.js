@@ -379,4 +379,8 @@ test("render replaces an old page's stylesheet and leaves its entries alone", as
   assert.ok(fresh.includes(CSS), "stylesheet is not the current one")
   assert.doesNotMatch(fresh, /old\{\}/)
   assert.match(fresh, /data-kind="command"/)
+  // The page is dark, always — no light palette and nothing keyed to the OS theme.
+  assert.match(fresh, /data-theme="dark"/)
+  assert.match(fresh, /<meta name="color-scheme" content="dark">/)
+  assert.doesNotMatch(fresh, /prefers-color-scheme|--page:#f5f5f7/)
 })

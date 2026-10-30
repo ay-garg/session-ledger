@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { execFile } from "node:child_process"
-import { mkdtemp, readdir, readFile } from "node:fs/promises"
+import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
@@ -17,6 +17,14 @@ function run(args, payload) {
       done({ code: error?.code ?? 0, stdout, stderr })
     })
     child.stdin.end(JSON.stringify(payload))
+  })
+}
+
+function cli(args) {
+  return new Promise((done) => {
+    execFile("node", [CLI, ...args], (error, stdout, stderr) => {
+      done({ code: error?.code ?? 0, stdout, stderr })
+    })
   })
 }
 
@@ -350,4 +358,24 @@ test("an unconfirmed call is not flushed into another session's file", async () 
   await run(["--dir", dir], { ...claudeStart, session_id: "ses-a", tool_use_id: "toolu_a" })
   await run(["--dir", dir], { session_id: "ses-b", cwd: "/work/project", hook_event_name: "Stop" })
   assert.deepEqual((await readdir(dir)).filter((n) => n.endsWith(".md")), [])
+})
+
+test("render replaces an old page's stylesheet and leaves its entries alone", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir], claudeStart)
+  await run(["--dir", dir], claudeEnd)
+  const [name] = (await readdir(dir)).filter((n) => n.endsWith(".html"))
+  const page = join(dir, name)
+
+  const stale = (await readFile(page, "utf8")).replace(/<style>[\s\S]*?<\/style>/, "<style>old{}</style>")
+  await writeFile(page, stale, "utf8")
+
+  const { code, stdout } = await cli(["render", "--dir", dir])
+  assert.equal(code, 0)
+  assert.match(stdout, /restyled 1 page/)
+
+  const fresh = await readFile(page, "utf8")
+  assert.match(fresh, /--accentdot:#3b82f6/)
+  assert.doesNotMatch(fresh, /old\{\}/)
+  assert.match(fresh, /data-kind="command"/)
 })

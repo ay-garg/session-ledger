@@ -7,7 +7,7 @@ tool that produced it.
 
 ```
 2026-10-30-ses_e72ab7b8.md     ← the record: plain markdown, survives everything
-2026-10-30-ses_e72ab7b8.html   ← the same session as a glassmorphism page
+2026-10-30-ses_e72ab7b8.html   ← the same session as a readable page
 ```
 
 Works with **OpenCode**, **Claude Code**, **Cursor**, **Codex**, and any other
@@ -38,7 +38,7 @@ step — just `node` ≥ 18.
 | **Directory** | `/Users/ayush/claude-code` |
 | **Started** | 2026-10-30 21:09:16 IST |
 | **Timezone** | `Asia/Kolkata` · UTC+05:30 |
-| **Format** | session-ledger `0.4.0` · schema 1 |
+| **Format** | session-ledger `0.5.0` · schema 1 |
 
 ### 💬 21:09:14 IST · `msg_01H8`
 
@@ -83,12 +83,15 @@ VS Code and Obsidian and degrades to a quote everywhere else.
 
 ### Why there is also an HTML file
 
-Markdown cannot do translucency, blur or layered gradients — a "glassmorphism
-markdown file" is not a thing. So the aesthetic lives in a self-contained HTML
-page written next to the markdown: frosted cards over a low-contrast slate
-background, light and dark by `prefers-color-scheme`, no JavaScript, no network
-requests. The
-markdown stays canonical; the HTML is a view of it.
+Markdown cannot do colour, type hierarchy or a terminal block that scrolls. So
+a self-contained HTML page is written next to it: a compact header, one card per
+entry, timestamps and IDs in monospace, and commands and outputs in dark
+terminal-style blocks — on a faint grid, light or dark by
+`prefers-color-scheme`, with no JavaScript and no network requests. The markdown
+stays canonical; the HTML is a view of it.
+
+The page markup is deliberately plain, so `session-ledger render` can restyle
+pages written by an older version without rereading the markdown.
 
 ---
 
@@ -366,6 +369,7 @@ and point the hook at every event in the table above.
 
 ```
 session-ledger hook        read one hook event on stdin and append it
+session-ledger render      restyle every .html page in the output directory
 session-ledger show-config print resolved configuration and its sources
 session-ledger help        usage
 session-ledger --version   version
@@ -467,7 +471,7 @@ A whole session diffs cleanly: the header is stable and entries only append, so
 | Every call appears twice | Hooks configured globally **and** in a project `.claude/settings.json` | Keep one of the two |
 | Wrong clock | `timezone` left at the machine default | Pin it: `--tz Asia/Kolkata` or the config file |
 | Duration shows `—` | The harness sent no start event, so there is nothing to measure from | Expected for after-only harnesses |
-| Page looks like an older version | The HTML stylesheet is written once, at creation | Delete that `.html`; it rebuilds with the current look |
+| Page looks like an older version | The stylesheet is written when the page is created | `session-ledger render --dir <dir>` rewrites it in place, entries untouched |
 
 `hook` never fails an agent turn: malformed JSON, unknown events and out-of-scope
 sessions exit `0` after writing a line to stderr. If you see exit `1`, it is a
@@ -515,9 +519,9 @@ Other deliberate limits:
   same hook events.
 - The HTML loses an entry if a process is killed while holding its lock; the
   markdown is never locked and never loses one.
-- The HTML's stylesheet and header are written when the page is created, so a
-  later version or theme change only affects new sessions. Delete an `.html` to
-  have it rebuilt (from that point on) with the current look.
+- An `.html` keeps the stylesheet it was created with until you run
+  `session-ledger render`, which swaps it for the current one in place. The
+  header card keeps its original wording.
 - There is no rotation or retention policy. One file per session, forever.
 
 ---
@@ -525,18 +529,18 @@ Other deliberate limits:
 ## Development
 
 ```bash
-node --test tests/          # 42 unit + end-to-end tests
+node --test tests/          # 43 unit + end-to-end tests
 node bin/session-ledger.js show-config
 ```
 
 ```
-bin/session-ledger.js   CLI: hook, show-config, flags, pending state
+bin/session-ledger.js   CLI: hook, render, show-config, flags, pending state
 core/ledger.js          timezone formatting, durations, fences, output unwrapping
 core/normalize.js       the only file that knows every harness payload shape
 core/config.js          flag > env > file > default, scope matching
 core/store.js           file naming, append, HTML lock
 core/markdown.js        the record
-core/html.js            the glass page
+core/html.js            the page: stylesheet and markup
 adapters/opencode/      native plugin + entry.mjs for OpenCode's resolver
 adapters/claude-code/   settings snippet
 adapters/cursor/        hooks.json

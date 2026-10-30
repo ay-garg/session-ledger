@@ -2,6 +2,7 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { VERSION } from "../core/ledger.js"
+import { CSS } from "../core/html.js"
 import { describeConfig, inScope, resolveConfig } from "../core/config.js"
 import { needsPermissionReply, normalize } from "../core/normalize.js"
 import { record } from "../core/store.js"
@@ -13,6 +14,7 @@ import { record } from "../core/store.js"
 const HELP = `session-ledger ${VERSION}
 
   session-ledger hook [options]   read one hook event on stdin, append it (never blocks)
+  session-ledger render           restyle every .html page in the output directory
   session-ledger show-config      print the resolved configuration and where each value came from
   session-ledger help             this text
 
@@ -24,7 +26,7 @@ Options (also honoured by show-config):
   --harness <name>      label shown in the header (claude|codex|cursor|...)
   --no-prompts          do not record user prompts           env SESSION_LEDGER_PROMPTS
   --no-tools            record shell only, not other tools   env SESSION_LEDGER_TOOLS
-  --no-html             skip the glassmorphism page          env SESSION_LEDGER_HTML
+  --no-html             skip the HTML page                  env SESSION_LEDGER_HTML
   --config <path>       alternate config file
 
 Config file: ~/.config/session-ledger/config.json
@@ -45,6 +47,11 @@ const main = async () => {
     log(`config file: ${path}`)
     for (const row of rows) log(`  ${row.key.padEnd(10)} ${row.value}  (${row.source})`)
     return
+  }
+
+  if (command === "render") {
+    const count = await restyle(config.dir)
+    return log(`restyled ${count} page${count === 1 ? "" : "s"} in ${config.dir}`)
   }
 
   if (command === "hook") {
@@ -100,6 +107,25 @@ const main = async () => {
   log(`session-ledger: unknown command "${command}"\n`, true)
   log(HELP)
   process.exitCode = 2
+}
+
+// The page markup is stable, so a new stylesheet can be applied to pages written by
+// an older version without rereading the markdown.
+async function restyle(dir) {
+  let count = 0
+  for (const name of await readdir(dir).catch(() => [])) {
+    if (!name.endsWith(".html")) continue
+    const file = join(dir, name)
+    const html = await readFile(file, "utf8")
+    // A function replacement, so a stylesheet containing `$&` cannot be expanded.
+    let next = html.replace(/<style>[\s\S]*?<\/style>/, () => `<style>${CSS}</style>`)
+    // Older pages describe themselves in words the current skeleton no longer uses.
+    next = next.replace("append-only command record</p>", "append-only record of prompts, commands and tool calls</p>")
+    if (next === html) continue
+    await writeFile(file, next, "utf8")
+    count++
+  }
+  return count
 }
 
 function parseFlags(args) {

@@ -16,23 +16,23 @@ const esc = (s) =>
 
 const CSS = `
 :root{
-  --page:#e7ecff;
-  --ink:#0f172a; --muted:#475569;
-  --glass:rgba(255,255,255,.42); --stroke:rgba(255,255,255,.7);
-  --code:rgba(15,23,42,.06); --shadow:0 22px 60px -24px rgba(15,23,42,.5);
-  --ok:#047857; --okbg:rgba(16,185,129,.18);
-  --fail:#b91c1c; --failbg:rgba(239,68,68,.18);
-  --accent:#4f46e5;
+  --page:#f2f4f7;
+  --ink:#111827; --muted:#4b5563;
+  --glass:rgba(255,255,255,.58); --stroke:rgba(255,255,255,.85);
+  --code:rgba(17,24,39,.05); --shadow:0 20px 48px -28px rgba(15,23,42,.35);
+  --ok:#046c4e; --okbg:rgba(5,150,105,.12);
+  --fail:#a01b1b; --failbg:rgba(220,38,38,.1);
+  --accent:#1e40af;
 }
 @media (prefers-color-scheme:dark){
   :root{
-    --page:#080c18;
-    --ink:#e6ecf7; --muted:#93a1b8;
-    --glass:rgba(30,41,59,.42); --stroke:rgba(148,163,184,.24);
-    --code:rgba(226,232,240,.07); --shadow:0 22px 60px -24px rgba(0,0,0,.9);
-    --ok:#6ee7b7; --okbg:rgba(16,185,129,.15);
-    --fail:#fca5a5; --failbg:rgba(239,68,68,.16);
-    --accent:#a5b4fc;
+    --page:#0b0f14;
+    --ink:#e5e9f0; --muted:#94a3b8;
+    --glass:rgba(23,31,42,.6); --stroke:rgba(148,163,184,.18);
+    --code:rgba(226,232,240,.06); --shadow:0 20px 48px -28px rgba(0,0,0,.85);
+    --ok:#5eead4; --okbg:rgba(13,148,136,.16);
+    --fail:#fca5a5; --failbg:rgba(239,68,68,.14);
+    --accent:#93b4f5;
   }
 }
 *{box-sizing:border-box}
@@ -40,18 +40,18 @@ body{
   margin:0; min-height:100vh; color:var(--ink); background:var(--page);
   font:15px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
   background-image:
-    radial-gradient(42vw 42vw at 6% 4%, #818cf8 0%, transparent 62%),
-    radial-gradient(38vw 38vw at 92% 14%, #f472b6 0%, transparent 60%),
-    radial-gradient(46vw 46vw at 30% 78%, #34d399 0%, transparent 62%),
-    radial-gradient(40vw 40vw at 88% 92%, #38bdf8 0%, transparent 62%);
+    radial-gradient(50vw 50vw at 6% 0%, #d6dfeb 0%, transparent 62%),
+    radial-gradient(44vw 44vw at 96% 6%, #e4e9f1 0%, transparent 64%),
+    radial-gradient(54vw 54vw at 32% 88%, #dbe3ed 0%, transparent 62%),
+    radial-gradient(46vw 46vw at 92% 96%, #e9edf3 0%, transparent 64%);
   background-attachment:fixed;
 }
 @media (prefers-color-scheme:dark){
   body{background-image:
-    radial-gradient(42vw 42vw at 6% 4%, #4f46e5 0%, transparent 62%),
-    radial-gradient(38vw 38vw at 92% 14%, #a21caf 0%, transparent 60%),
-    radial-gradient(46vw 46vw at 30% 78%, #0f766e 0%, transparent 62%),
-    radial-gradient(40vw 40vw at 88% 92%, #1d4ed8 0%, transparent 62%);}
+    radial-gradient(50vw 50vw at 6% 0%, #1a2432 0%, transparent 62%),
+    radial-gradient(44vw 44vw at 96% 6%, #141c28 0%, transparent 64%),
+    radial-gradient(54vw 54vw at 32% 88%, #16202c 0%, transparent 62%),
+    radial-gradient(46vw 46vw at 92% 96%, #101822 0%, transparent 64%);}
 }
 .wrap{max-width:1040px;margin:0 auto;padding:44px 20px 72px}
 .card{

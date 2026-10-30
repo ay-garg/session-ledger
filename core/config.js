@@ -37,6 +37,8 @@ export function validZone(timezone) {
   }
 }
 
+const flag = (value) => !(value === false || /^(0|false|no|off)$/i.test(String(value)))
+
 const expand = (path) => (path === "~" ? home() : path.startsWith("~/") ? join(home(), path.slice(2)) : path)
 
 export function resolveConfig(overrides = {}) {
@@ -81,8 +83,9 @@ export function resolveConfig(overrides = {}) {
     pick("maxOutput", overrides.maxOutput, process.env.SESSION_LEDGER_MAX_OUTPUT, values.maxOutput, DEFAULT_MAX_OUTPUT),
   )
 
-  const htmlRaw = pick("html", overrides.html, process.env.SESSION_LEDGER_HTML, values.html, true)
-  const html = !(htmlRaw === false || /^(0|false|no|off)$/i.test(String(htmlRaw)))
+  const html = flag(pick("html", overrides.html, process.env.SESSION_LEDGER_HTML, values.html, true))
+  const prompts = flag(pick("prompts", overrides.prompts, process.env.SESSION_LEDGER_PROMPTS, values.prompts, true))
+  const tools = flag(pick("tools", overrides.tools, process.env.SESSION_LEDGER_TOOLS, values.tools, true))
 
   return {
     dir,
@@ -90,6 +93,8 @@ export function resolveConfig(overrides = {}) {
     scope,
     maxOutput: Number.isFinite(maxOutput) && maxOutput > 0 ? maxOutput : DEFAULT_MAX_OUTPUT,
     html,
+    prompts,
+    tools,
     sources,
     configPath: path,
   }
@@ -103,7 +108,7 @@ export function inScope(config, directory) {
 }
 
 export function describeConfig(config) {
-  const rows = ["dir", "timezone", "scope", "maxOutput", "html"].map((key) => ({
+  const rows = ["dir", "timezone", "scope", "maxOutput", "html", "prompts", "tools"].map((key) => ({
     key,
     value: config[key] === "" ? "(every session)" : String(config[key]),
     source: config.sources[key],

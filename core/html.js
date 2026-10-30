@@ -73,10 +73,12 @@ dl.meta dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font
 .entry{position:relative;overflow:hidden}
 .entry::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--ok);opacity:.75}
 .entry.fail::before{background:var(--fail)}
+.entry.prompt::before{background:var(--accent)}
 .row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;font-size:12.5px;color:var(--muted)}
 .pill{font-weight:700;padding:3px 10px;border-radius:999px;font-size:11.5px;letter-spacing:.02em}
 .pill.ok{color:var(--ok);background:var(--okbg)}
 .pill.fail{color:var(--fail);background:var(--failbg)}
+.pill.prompt{color:var(--accent);background:var(--code)}
 .sep{opacity:.4}
 .id{margin-left:auto;font-family:ui-monospace,Menlo,monospace;font-size:11px;padding:2px 8px;border-radius:8px;background:var(--code)}
 .lbl{margin:0 0 6px;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700}
@@ -134,34 +136,54 @@ export function card(e, session) {
   const failed = e.status === "failed"
   const at = parts(e.at, session.timezone)
   const tz = zoneName(session.timezone, e.at)
-  const out =
+  const elsewhere = e.cwd && e.cwd !== session.directory
+  const kind = e.kind ?? "command"
+  const label = kind === "prompt" ? "prompt" : kind === "tool" ? e.tool ?? "tool" : "command"
+
+  const output =
     e.output.trim() === "" ? `<p class="empty">(no output)</p>` : `<pre class="out"><code>${esc(e.output.replace(/\n+$/, ""))}</code></pre>`
   const note = e.truncated > 0 ? `<p class="empty">… ${e.truncated.toLocaleString("en-US")} characters truncated</p>` : ""
-  const elsewhere = e.cwd && e.cwd !== session.directory
 
-  return `<section class="card entry${failed ? " fail" : ""}" data-status="${e.status}" id="e-${esc(e.id)}">
+  const body =
+    kind === "prompt"
+      ? `<p class="lbl">prompt</p>
+<pre class="cmd prompt"><code>${esc((e.prompt ?? "").replace(/\n+$/, ""))}</code></pre>${note}`
+      : `<p class="lbl">${kind === "tool" ? "input" : "command"}</p>
+<pre class="cmd"><code>${esc(kind === "tool" ? e.input ?? "(no input)" : e.command)}</code></pre>
+<p class="lbl">output</p>
+${output}${note}`
+
+  const pill =
+    kind === "prompt"
+      ? `<span class="pill prompt">💬 prompt</span>`
+      : `<span class="pill ${failed ? "fail" : "ok"}">${failed ? "✕ failed" : "✓ completed"}</span>`
+
+  return `<section class="card entry${failed ? " fail" : ""}${kind === "prompt" ? " prompt" : ""}" data-kind="${kind}" data-status="${failed ? "failed" : "completed"}" id="e-${esc(e.id)}">
 <div class="row">
-<span class="pill ${failed ? "fail" : "ok"}">${failed ? "✕ failed" : "✓ completed"}</span>
+${pill}
 <span>${esc(at.time)} ${esc(tz)}</span>
 <span class="sep">·</span><span>${esc(duration(e.durationMs))}</span>
+${kind === "tool" ? `<span class="sep">·</span><span>🛠 ${esc(label)}</span>` : ""}
 ${elsewhere ? `<span class="sep">·</span><span>${esc(e.cwd)}</span>` : ""}
 <code class="id">${esc(e.id)}</code>
 </div>
-<p class="lbl">command</p>
-<pre class="cmd"><code>${esc(e.command)}</code></pre>
-<p class="lbl">output</p>
-${out}${note}
+${body}
 </section>
 `
 }
 
 export function stats(html) {
-  const total = (html.match(/data-status="/g) ?? []).length
+  const count = (kind) => (html.match(new RegExp(`data-kind="${kind}"`, "g")) ?? []).length
+  const commands = count("command")
+  const tools = count("tool")
+  const prompts = count("prompt")
   const failed = (html.match(/data-status="failed"/g) ?? []).length
-  const ok = total - failed
+  const total = commands + tools + prompts
   return [
-    `<span class="chip">${total} command${total === 1 ? "" : "s"}</span>`,
-    `<span class="chip ok">${ok} completed</span>`,
+    `<span class="chip">${total} event${total === 1 ? "" : "s"}</span>`,
+    prompts > 0 ? `<span class="chip">${prompts} prompt${prompts === 1 ? "" : "s"}</span>` : "",
+    commands > 0 ? `<span class="chip ok">${commands} command${commands === 1 ? "" : "s"}</span>` : "",
+    tools > 0 ? `<span class="chip">${tools} tool call${tools === 1 ? "" : "s"}</span>` : "",
     failed > 0 ? `<span class="chip fail">${failed} failed</span>` : "",
   ]
     .filter(Boolean)

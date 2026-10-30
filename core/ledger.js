@@ -1,23 +1,29 @@
 // Shared vocabulary for a session ledger. No harness imports and no build step:
 // plain ESM so `node`, `bun` and any hook runner can load it as-is.
 
-export const VERSION = "0.2.0"
+export const VERSION = "0.3.0"
 export const SCHEMA = 1
 
 export const DEFAULT_MAX_OUTPUT = 20_000
 
 /**
  * @typedef {"completed" | "failed"} Status
+ * @typedef {"command" | "tool" | "prompt"} Kind
  *
  * @typedef {object} Entry
+ * @property {Kind} kind    Shell command, any other tool/MCP call, or a user prompt.
  * @property {string} id        Stable, unique within the session. Never reused.
  * @property {Date} at          When the command was requested.
  * @property {number | null} durationMs  null when the harness does not report it.
  * @property {Status} status
- * @property {string} command
+ * @property {string} command   Shell command line (kind "command" only).
+ * @property {string} [tool]    Harness tool name, including MCP tools (kind "tool").
+ * @property {string} [prompt]  User prompt text (kind "prompt").
  * @property {string} cwd
  * @property {string} output
+ * @property {string} [input]   Tool arguments, rendered (kind "tool").
  * @property {number} truncated  Characters dropped from `output`, 0 if intact.
+ * @property {number} [inputTruncated] Characters dropped from `input`.
  *
  * @typedef {object} Session
  * @property {string} id
@@ -92,6 +98,17 @@ export function fence(body, lang) {
 export function clip(text, limit = DEFAULT_MAX_OUTPUT) {
   if (text.length <= limit) return { body: text, truncated: 0 }
   return { body: text.slice(0, limit), truncated: text.length - limit }
+}
+
+/** Readable text for a tool's input object. */
+export function pretty(value) {
+  if (typeof value === "string") return value
+  if (value === null || value === undefined) return ""
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
 }
 
 /**

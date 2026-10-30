@@ -15,6 +15,7 @@ const session = {
 }
 
 const entry = {
+  kind: "command",
   id: "a1b2c3d4",
   at: new Date("2026-10-30T15:30:05Z"),
   durationMs: 1780,
@@ -73,10 +74,56 @@ test("strings are escaped in html", () => {
 })
 
 test("stats count the cards actually present", () => {
-  const html = card(entry, session) + card({ ...entry, id: "deadbeef", status: "failed" }, session)
+  const html =
+    card(entry, session) +
+    card({ ...entry, id: "deadbeef", status: "failed" }, session) +
+    card({ kind: "prompt", id: "cafe0001", at: entry.at, durationMs: null, status: "completed", prompt: "hi", cwd: "/work", output: "" }, session)
+  assert.match(stats(html), /3 events/)
   assert.match(stats(html), /2 commands/)
-  assert.match(stats(html), /1 completed/)
+  assert.match(stats(html), /1 prompt/)
   assert.match(stats(html), /1 failed/)
+})
+
+test("a prompt gets its own card, with no status mark", () => {
+  const md = markdownEntry(
+    { kind: "prompt", id: "cafe0001", at: entry.at, durationMs: null, status: "completed", prompt: "Fix the test", cwd: "/work", output: "" },
+    session,
+  )
+  assert.match(md, /^### 💬 21:00:05 IST · `cafe0001`$/m)
+  assert.match(md, /```text\nFix the test\n```/)
+})
+
+test("a tool call shows its name, input and output", () => {
+  const md = markdownEntry(
+    {
+      ...entry,
+      kind: "tool",
+      tool: "mcp__filesystem__read_file",
+      command: "",
+      input: '{\n  "path": "/work/a.js"\n}',
+      output: "contents",
+    },
+    session,
+  )
+  assert.match(md, /^### ✅ 21:00:05 IST · 1\.78 s · 🛠 `mcp__filesystem__read_file`/m)
+  assert.match(md, /```json\n\{\n  "path": "\/work\/a\.js"\n\}\n```/)
+  assert.match(md, /\*\*Output\*\*/)
+  assert.match(md, /contents/)
+})
+
+test("a failed tool call is marked failed", () => {
+  const md = markdownEntry({ ...entry, kind: "tool", tool: "Read", command: "", status: "failed", input: "{}" }, session)
+  assert.match(md, /^### ❌ /m)
+})
+
+test("truncated tool input is disclosed", () => {
+  const md = markdownEntry({ ...entry, kind: "tool", tool: "Write", command: "", input: "x", inputTruncated: 42 }, session)
+  assert.match(md, /42 characters truncated/)
+})
+
+test("the html card carries the entry kind", () => {
+  assert.match(card({ ...entry, kind: "tool", tool: "Read", input: "{}" }, session), /data-kind="tool"/)
+  assert.match(card({ ...entry, kind: "prompt", prompt: "hi" }, session), /data-kind="prompt"/)
 })
 
 test("header states the format version and zone", () => {

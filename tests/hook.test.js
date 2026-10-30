@@ -170,16 +170,117 @@ test("cursor: postToolUseFailure is marked failed", async () => {
   assert.match(text, /permission denied/)
 })
 
-test("a non-shell tool is not recorded", async () => {
+test("a non-shell tool is recorded with its name, input and output", async () => {
   const dir = await sandbox()
-  await run(["--dir", dir], {
+  const base = {
     ...claudeEnd,
     tool_name: "Read",
     tool_input: { file_path: "/work/project/a.js" },
-    tool_response: "contents",
+    tool_use_id: "toolu_read01",
+  }
+  await run(["--dir", dir], { ...base, hook_event_name: "PreToolUse", tool_response: undefined })
+  await run(["--dir", dir], { ...base, tool_response: { type: "text", file: { content: "export const a = 1" } } })
+
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /🛠 `Read`/)
+  assert.match(text, /"file_path": "\/work\/project\/a\.js"/)
+  assert.match(text, /export const a = 1/)
+})
+
+test("an MCP tool call is recorded like any other tool", async () => {
+  const dir = await sandbox()
+  const base = {
+    ...claudeEnd,
+    tool_name: "mcp__filesystem__read_file",
+    tool_input: { path: "/work/project/a.js" },
+    tool_use_id: "toolu_mcp01",
+  }
+  await run(["--dir", dir], { ...base, hook_event_name: "PreToolUse", tool_response: undefined })
+  await run(["--dir", dir], { ...base, tool_response: { content: "file body" }, duration_ms: 9 })
+
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /🛠 `mcp__filesystem__read_file`/)
+  assert.match(text, /file body/)
+})
+
+test("claude code: a user prompt is recorded as a prompt entry", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir], {
+    session_id: "cc-prompt",
+    cwd: "/work/project",
+    hook_event_name: "UserPromptSubmit",
+    prompt: "Fix the failing checkout test",
   })
 
-  assert.deepEqual(await readdir(dir), [])
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /^### 💬 \d{2}:\d{2}:\d{2} IST · `\d+`$/m)
+  assert.match(text, /Fix the failing checkout test/)
+  assert.doesNotMatch(text, /✅|❌/)
+})
+
+test("cursor: beforeSubmitPrompt is recorded without a permission reply", async () => {
+  const dir = await sandbox()
+  const result = await run(["--dir", dir], {
+    conversation_id: "cur-prompt",
+    hook_event_name: "beforeSubmitPrompt",
+    prompt: "Add a retry to the uploader",
+  })
+  assert.equal(result.stdout.trim(), "")
+
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /Add a retry to the uploader/)
+  assert.match(text, /Cursor/)
+})
+
+test("codex: UserPromptSubmit is recorded", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir, "--harness", "Codex"], {
+    session_id: "cx-prompt",
+    cwd: "/work/project",
+    hook_event_name: "UserPromptSubmit",
+    prompt: "Why is the build slow?",
+  })
+
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /Why is the build slow\?/)
+  assert.match(text, /Codex/)
+})
+
+test("prompts, commands and tools share one session file in order", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir], { session_id: "mixed", cwd: "/work", hook_event_name: "UserPromptSubmit", prompt: "run tests" })
+  await run(["--dir", dir], { ...claudeStart, session_id: "mixed", cwd: "/work" })
+  await run(["--dir", dir], { ...claudeEnd, session_id: "mixed", cwd: "/work" })
+
+  const { text } = await readMarkdown(dir)
+  const promptAt = text.indexOf("### 💬")
+  const commandAt = text.indexOf("### ✅")
+  assert.ok(promptAt > 0 && commandAt > promptAt, "prompt must appear before the command it asked for")
+})
+
+test("--no-tools keeps shell commands but drops other tools", async () => {
+  const dir = await sandbox()
+  const base = { ...claudeEnd, tool_name: "Read", tool_input: { file_path: "/work/a.js" }, tool_use_id: "toolu_r2" }
+  await run(["--dir", dir, "--no-tools"], { ...base, hook_event_name: "PreToolUse", tool_response: undefined })
+  await run(["--dir", dir, "--no-tools"], base)
+
+  assert.deepEqual(await readdir(dir).then((names) => names.filter((n) => n.endsWith(".md"))), [])
+})
+
+test("--no-prompts drops prompts but keeps commands", async () => {
+  const dir = await sandbox()
+  await run(["--dir", dir, "--no-prompts"], {
+    session_id: "cc-nop",
+    cwd: "/work/project",
+    hook_event_name: "UserPromptSubmit",
+    prompt: "not recorded",
+  })
+  assert.deepEqual(await readdir(dir).then((names) => names.filter((n) => n.endsWith(".md"))), [])
+
+  await run(["--dir", dir, "--no-prompts"], claudeStart)
+  await run(["--dir", dir, "--no-prompts"], claudeEnd)
+  const { text } = await readMarkdown(dir)
+  assert.match(text, /npm test/)
 })
 
 test("sessions outside the configured scope are skipped", async () => {

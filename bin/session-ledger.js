@@ -20,13 +20,16 @@ Options (also honoured by show-config):
   --dir <path>          where the .md/.html files go        env SESSION_LEDGER_DIR
   --tz <iana-zone>      timezone for every timestamp        env SESSION_LEDGER_TZ
   --scope <path>        only record sessions under <path>   env SESSION_LEDGER_SCOPE
-  --max-output <chars>  output kept per command             env SESSION_LEDGER_MAX_OUTPUT
+  --max-output <chars>  text kept per prompt/input/output     env SESSION_LEDGER_MAX_OUTPUT
   --harness <name>      label shown in the header (claude|codex|cursor|...)
-  --no-html             skip the glassmorphism page
+  --no-prompts          do not record user prompts           env SESSION_LEDGER_PROMPTS
+  --no-tools            record shell only, not other tools   env SESSION_LEDGER_TOOLS
+  --no-html             skip the glassmorphism page          env SESSION_LEDGER_HTML
   --config <path>       alternate config file
 
 Config file: ~/.config/session-ledger/config.json
-  { "dir": "~/logs", "timezone": "Europe/Berlin", "scope": "~/code", "maxOutput": 20000, "html": true }
+  { "dir": "~/logs", "timezone": "Europe/Berlin", "scope": "~/code",
+    "maxOutput": 20000, "prompts": true, "tools": true, "html": true }
 `
 
 const main = async () => {
@@ -66,6 +69,12 @@ const main = async () => {
     }
     if (result.kind === "ignore") return
 
+    if (result.kind === "prompt") {
+      if (!config.prompts || !inScope(config, result.session.directory)) return
+      await record(result.session, result.entry, config)
+      return
+    }
+
     const pending = await forget(config, result.key)
     if (pending) {
       result.entry.at = new Date(pending.started)
@@ -75,6 +84,7 @@ const main = async () => {
       if (pending.harness && !options.harness) result.session.harness = pending.harness
     }
     if (!inScope(config, result.session.directory)) return
+    if (result.entry.kind === "tool" && !config.tools) return
 
     result.session.started = new Date(pending?.started ?? result.entry.at)
     await record(result.session, result.entry, config)
@@ -98,6 +108,8 @@ function parseFlags(args) {
     else if (arg === "--harness") out.harness = next()
     else if (arg === "--config") process.env.SESSION_LEDGER_CONFIG = next()
     else if (arg === "--no-html") out.html = false
+    else if (arg === "--no-prompts") out.prompts = false
+    else if (arg === "--no-tools") out.tools = false
   }
   return out
 }

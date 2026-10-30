@@ -1,8 +1,9 @@
 # session-ledger
 
-Every shell command your AI agent ran, with its output and timestamps, written to
-one markdown file per session. Append-only, harness-agnostic, and readable a month
-later without the tool that produced it.
+Every prompt you sent, every command and every tool or MCP call your AI agent
+made — with inputs, outputs and timestamps — written to one markdown file per
+session. Append-only, harness-agnostic, and readable a month later without the
+tool that produced it.
 
 ```
 2026-10-30-ses_e72ab7b8.md     ← the record: plain markdown, survives everything
@@ -29,41 +30,48 @@ step — just `node` ≥ 18.
 | **Directory** | `/Users/ayush/claude-code` |
 | **Started** | 2026-10-30 21:09:16 IST |
 | **Timezone** | `Asia/Kolkata` · UTC+05:30 |
-| **Format** | session-ledger `0.2.0` · schema 1 |
+| **Format** | session-ledger `0.3.0` · schema 1 |
 
-> [!TIP]
-> Append-only record of every command this session ran, in order, with its output.
-> In each entry the `bash` block is the command and the `text` block below it is
-> what it printed. Entry IDs are stable and never reused.
-
----
-
-### ✅ 21:09:11 IST · 5.59 s · `a8efe52e`
-
-```bash
-printf 'one\ntwo\n'
-```
+### 💬 21:09:14 IST · `msg_01H8`
 
 ```text
-one
-two
+Fix the failing checkout test
 ```
 
-### ❌ 21:10:04 IST · 418 ms · `c1f9a0b2`
+### ✅ 21:09:16 IST · 5.59 s · `a8efe52e`
 
 ```bash
 npm test -- --grep checkout
 ```
 
 ```text
-Exit code 1
-Cannot find module 'express'
+12 passing
+```
+
+### ✅ 21:09:22 IST · 38 ms · 🛠 `mcp__github__search_issues`
+
+**Input**
+
+```json
+{
+  "query": "checkout timeout"
+}
+```
+
+**Output**
+
+```text
+#142 Timeout in checkout when cart is empty
 ```
 ````
 
 The markdown is the record: `cat` it, grep it, diff it, commit it, open it on
-GitHub. The `> [!TIP]` callout renders on GitHub, VS Code and Obsidian and
-degrades to a quote everywhere else.
+GitHub. The `> [!TIP]` callout (omitted above for length) renders on GitHub,
+VS Code and Obsidian and degrades to a quote everywhere else.
+
+- 💬 **prompts** show what you asked, verbatim, at the time you asked it.
+- **commands** show the `bash` line that ran and its `text` output.
+- 🛠 **tools and MCP calls** show the tool name, its JSON input, and its output.
 
 ### Why there is also an HTML file
 
@@ -92,6 +100,8 @@ cat > ~/.config/session-ledger/config.json <<'JSON'
   "timezone": "Asia/Kolkata",
   "scope": "~/code",
   "maxOutput": 20000,
+  "prompts": true,
+  "tools": true,
   "html": true
 }
 JSON
@@ -126,7 +136,9 @@ from**, which is the fastest way to answer "why is it writing there?".
 | `dir` | `--dir` | `SESSION_LEDGER_DIR` | `~/.session-ledger` | Directory for the `.md` / `.html` files |
 | `timezone` | `--tz` | `SESSION_LEDGER_TZ` | machine zone | IANA zone for every timestamp and the filename date |
 | `scope` | `--scope` | `SESSION_LEDGER_SCOPE` | every session | Only record sessions whose working directory is under this path |
-| `maxOutput` | `--max-output` | `SESSION_LEDGER_MAX_OUTPUT` | `20000` | Characters of output kept per command |
+| `maxOutput` | `--max-output` | `SESSION_LEDGER_MAX_OUTPUT` | `20000` | Characters kept per prompt, tool input and output |
+| `prompts` | `--no-prompts` | `SESSION_LEDGER_PROMPTS` | `true` | Record user prompts |
+| `tools` | `--no-tools` | `SESSION_LEDGER_TOOLS` | `true` | Record non-shell tool and MCP calls; shell commands are always recorded |
 | `html` | `--no-html` | `SESSION_LEDGER_HTML` | `true` | Set `false` / `0` / `no` to skip the HTML page |
 
 Notes that save debugging time:
@@ -159,79 +171,76 @@ paths in that wrapper and let the adapter stay in the repo:
 process.env.SESSION_LEDGER_DIR ??= "/path/to/your/logs"
 process.env.SESSION_LEDGER_SCOPE ??= "/path/to/your/projects"
 
-export { default } from "/absolute/path/to/session-ledger/adapters/opencode/plugin.js"
+export { default } from "/absolute/path/to/session-ledger/adapters/opencode/entry.mjs"
 ```
+
+Import `entry.mjs`, not `plugin.js`: OpenCode's plugin resolver looks for a
+matching `.ts` file when it is given a `.js` import, and fails when the repo has
+none.
 
 Reload with `opencode api post /api/location/reload`. A session already running
 keeps its old plugin snapshot until it is reloaded. Verify by running a shell
 command and checking that a `.md` appeared in your log directory.
 
-The adapter uses OpenCode's native `execute.before` / `execute.after` tool hooks,
-so it records the exact command, working directory and measured duration.
+The adapter uses OpenCode's native `session.hook("prompt")` for prompts and
+`execute.before` / `execute.after` for every tool, so it records the exact text,
+tool name, input, output, working directory and measured duration.
 
 ### Claude Code
 
 Merge the `hooks` object from
 [`adapters/claude-code/settings.example.json`](adapters/claude-code/settings.example.json)
 into `~/.claude/settings.json` (or a project's `.claude/settings.json`), replacing
-the placeholder path:
+the placeholder path. The shape:
 
 ```json
 {
   "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command",
+        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
+    ],
     "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command",
+      { "matcher": "*", "hooks": [{ "type": "command",
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
     ],
-    "PostToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command",
-        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
-    ],
-    "PostToolUseFailure": [
-      { "matcher": "Bash", "hooks": [{ "type": "command",
-        "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness claude-code" }] }
-    ]
+    "PostToolUse": [ … same matcher and command … ],
+    "PostToolUseFailure": [ … same matcher and command … ]
   }
 }
 ```
 
-Restart Claude Code (or open `/hooks` to confirm the hooks loaded). `PreToolUse`
-starts the clock; `PostToolUse` / `PostToolUseFailure` writes the entry. Claude
-Code supplies `duration_ms`, so the duration in the ledger is the tool's own
+The full file ships in the adapter folder; `…` above is only for brevity.
+`"matcher": "*"` makes every tool fire the hook, not just `Bash`; non-shell tools
+become 🛠 entries. Restart Claude Code or open `/hooks` to confirm the hooks
+loaded. Claude Code supplies `duration_ms`, so durations are the tool's own
 measurement, not a wall-clock guess.
 
 ### Cursor
 
 Copy [`adapters/cursor/hooks.json`](adapters/cursor/hooks.json) to
 `~/.cursor/hooks.json` for every project, or to `<repo>/.cursor/hooks.json` for
-one project, again replacing the path. It uses the generic tool hooks, filtered
-to shell calls:
+one project, again replacing the path:
 
 ```json
 {
   "version": 1,
   "hooks": {
+    "beforeSubmitPrompt": [
+      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
+    ],
     "preToolUse": [
-      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor",
-        "matcher": "Shell" }
+      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor" }
     ],
-    "postToolUse": [
-      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor",
-        "matcher": "Shell" }
-    ],
-    "postToolUseFailure": [
-      { "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness cursor",
-        "matcher": "Shell" }
-    ]
+    "postToolUse": [ … same command … ],
+    "postToolUseFailure": [ … same command … ]
   }
 }
 ```
 
-The full file ships in the adapter folder; this is the same content, formatted
-for reading.
-
-Cursor **blocks the tool call if a permission hook prints anything that is not
-valid JSON**. session-ledger detects Cursor's `preToolUse` payload and answers
+No `matcher` means every tool is recorded, including MCP tools. Cursor **blocks
+the tool call if a permission hook prints anything that is not valid JSON**.
+session-ledger detects Cursor's `preToolUse` payload and answers
 `{"permission":"allow"}` before writing anything, so the call proceeds. Do not
 pipe the output of this command anywhere else.
 
@@ -246,16 +255,17 @@ Copy [`adapters/codex/hooks.json`](adapters/codex/hooks.json) to
 
 ```json
 {
-  "description": "Record every shell command Codex runs as a markdown ledger.",
+  "description": "Record every prompt, command and tool call Codex runs as a markdown ledger.",
   "hooks": {
-    "PreToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "timeout": 10,
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "timeout": 10,
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex" }] }
     ],
-    "PostToolUse": [
-      { "matcher": "Bash", "hooks": [{ "type": "command", "timeout": 10,
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "timeout": 10,
         "command": "node /absolute/path/to/session-ledger/bin/session-ledger.js hook --harness codex" }] }
-    ]
+    ],
+    "PostToolUse": [ … same matcher and command … ]
   }
 }
 ```
@@ -269,21 +279,24 @@ is trusted.
 
 ### Any other harness
 
-If the harness can run a shell command at "before tool" and "after tool" and
-sends a JSON object on stdin, it already works. The contract is:
+If the harness can run a shell command at "prompt submitted", "before tool" and
+"after tool" and sends a JSON object on stdin, it already works. The contract is:
 
 | Field | Required | Notes |
 | :--- | :--- | :--- |
-| `hook_event_name` | yes | Must look like `PreToolUse` / `PostToolUse` / `PostToolUseFailure`, or Cursor's `preToolUse` / `beforeShellExecution` / `afterShellExecution` |
+| `hook_event_name` | yes | `UserPromptSubmit` / `beforeSubmitPrompt` for prompts; `PreToolUse` / `PostToolUse` / `PostToolUseFailure` (or Cursor's `preToolUse` / `beforeShellExecution` / `afterShellExecution`) for tools |
 | `session_id` | yes | Also accepted: `conversation_id`, `thread_id`, `sessionId` |
-| `tool_input.command` | yes | Also accepted: `tool_input.cmd`, top-level `command` |
-| `tool_name` | no | If present and not shell-like (`Bash`, `Shell`, `exec_command`, `terminal`, …) the event is ignored |
+| `prompt` | prompts | Also accepted: `user_prompt`, `userPrompt`, `message` |
+| `tool_name` | tools | Free-form; `Bash` / `Shell` / `exec_command` / `terminal` / `sh` / `zsh` are treated as shell commands, everything else as a tool call |
+| `tool_input.command` | shell | Also accepted: `tool_input.cmd`, top-level `command` |
+| `tool_input` | tools | Recorded as the tool's JSON input |
 | `cwd` | no | Falls back to `tool_input.working_directory`, `workspace_roots[0]`, process cwd |
 | `tool_response` / `tool_output` / `output` | no | Unwrapped to readable text; JSON strings and `{stdout,stderr}` shapes are understood |
 | `duration_ms` / `duration` | no | Milliseconds. Without it, the start event's timestamp is used to measure |
 
-A harness with only one "after" event and no "before" event still records the
-command; only the duration shows `—`.
+A harness with only an "after tool" event and no "before" event still records the
+call; only the duration shows `—`. A harness with no prompt event records
+commands and tools but no 💬 entries.
 
 Minimal manual test, no harness involved:
 
@@ -311,15 +324,15 @@ A genuine write failure (permissions, disk full) exits `1` and says why; it is
 never silent. `show-config` and unknown commands may also exit non-zero.
 
 Flags accepted by `hook` and `show-config`: `--dir`, `--tz`, `--scope`,
-`--max-output`, `--no-html`, `--config`. `hook` additionally accepts
-`--harness <label>`.
+`--max-output`, `--no-prompts`, `--no-tools`, `--no-html`, `--config`. `hook`
+additionally accepts `--harness <label>`.
 
 ---
 
 ## What gets written
 
 - **One markdown file per session**, named `<YYYY-MM-DD>-<session-id>.md`, dated
-  by the session's first recorded command **in your configured timezone**. A
+  by the session's first recorded event **in your configured timezone**. A
   session that crosses midnight keeps writing to its original file.
 - **A companion `.html`** with the same content, written alongside it. It is
   rewritten atomically under a short lock so parallel tool calls cannot corrupt
@@ -327,13 +340,16 @@ Flags accepted by `hook` and `show-config`: `--dir`, `--tz`, `--scope`,
 - **The markdown is append-only.** The header is written once; entries are only
   ever appended, in the order the harness reported them. That is what makes it an
   audit record rather than a log that can be silently rewritten.
-- **Entry IDs** are derived from the harness's tool-call ID, so they are stable
-  and unique within a session.
-- **Output is fenced safely.** A command containing ```` ``` ```` gets a longer
-  fence instead of breaking the document.
-- **Long output is clipped** at `maxOutput` characters and the entry says exactly
-  how many characters were dropped. It is never silently truncated.
+- **Entry IDs** are derived from the harness's message/tool-call ID, so they are
+  stable and unique within a session.
+- **Paths are dated once per session** and reused, so a long session cannot split
+  into two files at midnight.
+- **Prompt text, tool input and output are all clipped** at `maxOutput`
+  characters; the entry says exactly how many characters were dropped. Nothing is
+  silently truncated.
 - **Empty output** is written as `(no output)` rather than an invisible blank.
+- **Safe fences.** A prompt or command containing ```` ``` ```` gets a longer
+  fence instead of breaking the document.
 
 ### Status semantics
 
@@ -348,6 +364,7 @@ code:
 - **Codex has no failure hook**: a non-zero exit arrives as a normal
   `PostToolUse`, so it stays `✅ completed` and the failure is visible in the
   output text.
+- Prompts are marked 💬 instead of a status, because they are not tool calls.
 
 ### Timezones
 
@@ -364,14 +381,18 @@ if the ledger must be consistent across machines.
 
 ## Privacy
 
-The ledger records commands **and their output verbatim**. It will record secrets
-that appeared in either: a `curl -H "Authorization: Bearer …"` lands on disk in
-full, as does anything a command prints. There is no redaction.
+The ledger records **prompts, tool inputs and outputs verbatim**. That includes
+everything you typed into the agent, every file path and argument a tool
+received, and everything a command printed. Secrets land on disk in full: a
+`curl -H "Authorization: Bearer …"` and a pasted API key are both recorded.
+There is no redaction.
 
 - Keep the output directory out of version control (`OpenCode-Data/.gitignore`,
   or wherever you point `dir`).
-- Use `scope` to limit recording to the projects you intend to audit.
-- Treat the log directory as sensitive as the shell history it replaces.
+- Use `scope` to limit recording to the projects you intend to audit, and
+  `--no-prompts` / `--no-tools` to narrow what is captured.
+- Treat the log directory as sensitive as the shell history it replaces —
+  arguably more so, because it also holds what you asked and what the agent read.
 
 The HTML page makes no network requests and loads no remote fonts, so opening it
 does not leak the ledger anywhere.
@@ -383,15 +404,19 @@ does not leak the ledger anywhere.
 | Harness | Verified | Known gaps |
 | :--- | :--- | :--- |
 | OpenCode 2.x | yes, live | Duration includes manual-approval wait; timestamp is request time, not process spawn |
-| Claude Code | yes, hook payloads | Only `Bash` is matched by the shipped config; other tools are ignored by design |
+| Claude Code | yes, hook payloads | Hooks must be trusted and enabled; only events you configure are recorded |
 | Cursor | yes, hook payloads | Requires a valid JSON reply on permission hooks — the CLI handles it, custom wrappers must too |
 | Codex | yes, hook payloads | No failure event and no `duration_ms`; duration is measured between the two hooks |
-| Anything else | contract above | Only shell commands are recorded; file edits are not |
+| Anything else | contract above | Only what the harness emits; no prompt event means no prompt entries |
 
 Other deliberate limits:
 
 - Commands run through a wrapper (RTK, `nice`, a shell function) are recorded as
   the wrapper saw them, not as the deeper process ran them.
+- Tool input is what the harness reports. A tool that mutates arguments after the
+  hook fires will differ from what the ledger shows.
+- Subagent turns appear only if the harness routes their tool calls through the
+  same hook events.
 - The HTML loses an entry if a process is killed while holding its lock; the
   markdown is never locked and never loses one.
 - There is no rotation or retention policy. One file per session, forever.
@@ -413,7 +438,7 @@ core/config.js          flag > env > file > default, scope matching
 core/store.js           file naming, append, HTML lock
 core/markdown.js        the record
 core/html.js            the glass page
-adapters/opencode/      native plugin
+adapters/opencode/      native plugin + entry.mjs for OpenCode's resolver
 adapters/claude-code/   settings snippet
 adapters/cursor/        hooks.json
 adapters/codex/         hooks.json

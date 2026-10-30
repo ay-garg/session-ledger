@@ -1,7 +1,7 @@
 {
   "name": "session-ledger",
-  "version": "0.2.0",
-  "description": "Every command your AI agent ran, with its output and timestamps, as a readable markdown ledger. Works with OpenCode, Claude Code, Cursor, Codex and any harness that can pipe JSON to a hook.",
+  "version": "0.3.0",
+  "description": "Every prompt, command and tool/MCP call your AI agent made, with inputs, outputs and timestamps, as a readable markdown ledger. Works with OpenCode, Claude Code, Cursor, Codex and any harness that can pipe JSON to a hook.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -20,8 +20,10 @@
     "cursor",
     "codex",
     "agents",
+    "prompts",
     "audit",
     "logging",
+    "mcp",
     "markdown"
   ],
   "files": [

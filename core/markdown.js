@@ -3,7 +3,8 @@ import { SCHEMA, VERSION, duration, fence, parts, zoneName, zoneOffset } from ".
 // Markdown is the canonical record: plain text, append-only, readable with `cat`
 // and on GitHub. Visual flourish lives in html.js — markdown cannot blur.
 
-const cell = (text) => text.replace(/\|/g, "\\|")
+const cell = (text) => String(text).replace(/\|/g, "\\|")
+const note = (dropped) => `… ${dropped.toLocaleString("en-US")} characters truncated`
 
 export function header(session) {
   const starts = parts(session.started, session.timezone)
@@ -26,9 +27,10 @@ export function header(session) {
     `| **Format** | session-ledger \`${VERSION}\` · schema ${SCHEMA} |`,
     "",
     "> [!TIP]",
-    "> Append-only record of every command this session ran, in order, with its output.",
-    "> In each entry the `bash` block is the command and the `text` block below it is",
-    "> what it printed. Entry IDs are stable and never reused.",
+    "> Append-only record of every prompt, command and tool call in this session, in order.",
+    "> 💬 is a user prompt, a `bash` block is a shell command with its `text` output,",
+    "> and 🛠 is any other tool or MCP call with its input and output. Entry IDs are",
+    "> stable and never reused.",
     "",
     "---",
     "",
@@ -37,22 +39,56 @@ export function header(session) {
 }
 
 export function entry(e, session) {
+  if (e.kind === "prompt") return promptEntry(e, session)
+  if (e.kind === "tool") return toolEntry(e, session)
+  return commandEntry(e, session)
+}
+
+function commandEntry(e, session) {
+  const head = headline(e, session)
+
+  return [head, "", fence(e.command, "bash"), "", fence(outputOf(e), "text"), "", ""].join("\n")
+}
+
+function toolEntry(e, session) {
+  const head = headline(e, session, ` · 🛠 \`${cell(e.tool ?? "tool")}\``)
+  const input = e.input ?? ""
+  const inputBody = e.inputTruncated > 0 ? `${input}\n\n${note(e.inputTruncated)}` : input
+
+  return [
+    head,
+    "",
+    "**Input**",
+    "",
+    fence(inputBody || "(no input)", "json"),
+    "",
+    "**Output**",
+    "",
+    fence(outputOf(e), "text"),
+    "",
+    "",
+  ].join("\n")
+}
+
+function promptEntry(e, session) {
+  const at = parts(e.at, session.timezone)
+  const tz = zoneName(session.timezone, e.at)
+  const where = e.cwd && e.cwd !== session.directory ? ` · \`${cell(e.cwd)}\`` : ""
+  const body = e.truncated > 0 ? `${(e.prompt ?? "").replace(/\n+$/, "")}\n\n${note(e.truncated)}` : e.prompt ?? ""
+
+  return [`### 💬 ${at.time} ${tz} · \`${e.id}\`${where}`, "", fence(body, "text"), "", ""].join("\n")
+}
+
+function headline(e, session, extra = "") {
   const at = parts(e.at, session.timezone)
   const tz = zoneName(session.timezone, e.at)
   const mark = e.status === "failed" ? "❌" : "✅"
   const where = e.cwd && e.cwd !== session.directory ? ` · \`${cell(e.cwd)}\`` : ""
 
-  const printed = e.output.trim() === "" ? "(no output)" : e.output.replace(/\n+$/, "")
-  const body =
-    e.truncated > 0 ? `${printed}\n\n… ${e.truncated.toLocaleString("en-US")} characters truncated` : printed
+  return `### ${mark} ${at.time} ${tz} · ${duration(e.durationMs)}${extra} · \`${e.id}\`${where}`
+}
 
-  return [
-    `### ${mark} ${at.time} ${tz} · ${duration(e.durationMs)} · \`${e.id}\`${where}`,
-    "",
-    fence(e.command, "bash"),
-    "",
-    fence(body, "text"),
-    "",
-    "",
-  ].join("\n")
+function outputOf(e) {
+  const printed = e.output.trim() === "" ? "(no output)" : e.output.replace(/\n+$/, "")
+  return e.truncated > 0 ? `${printed}\n\n${note(e.truncated)}` : printed
 }

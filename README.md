@@ -38,7 +38,7 @@ step — just `node` ≥ 18.
 | **Directory** | `/Users/ayush/claude-code` |
 | **Started** | 2026-10-30 21:09:16 IST |
 | **Timezone** | `Asia/Kolkata` · UTC+05:30 |
-| **Format** | session-ledger `0.5.0` · schema 1 |
+| **Format** | session-ledger `0.5.1` · schema 1 |
 
 ### 💬 21:09:14 IST · `msg_01H8`
 
@@ -84,11 +84,11 @@ VS Code and Obsidian and degrades to a quote everywhere else.
 ### Why there is also an HTML file
 
 Markdown cannot do colour, type hierarchy or a terminal block that scrolls. So
-a self-contained HTML page is written next to it: a compact header, one card per
-entry, timestamps and IDs in monospace, and commands and outputs in dark
-terminal-style blocks — on a faint grid, light or dark by
-`prefers-color-scheme`, with no JavaScript and no network requests. The markdown
-stays canonical; the HTML is a view of it.
+a self-contained HTML page is written next to it: a soft monochrome surface, one
+card per entry, timestamps and IDs in monospace, commands and outputs in dark
+terminal windows (dots and all), and prompts in a speech-bubble style. Light and
+dark both follow `prefers-color-scheme`; no JavaScript, no network requests, no
+remote fonts. The markdown stays canonical; the HTML is a view of it.
 
 The page markup is deliberately plain, so `session-ledger render` can restyle
 pages written by an older version without rereading the markdown.

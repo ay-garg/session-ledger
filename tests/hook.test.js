@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import test from "node:test"
 import { fileURLToPath } from "node:url"
+import { CSS } from "../core/html.js"
 
 // End-to-end: feed the CLI the real payload shape each harness sends and check
 // what lands on disk. If a harness changes its JSON, one of these fails loudly.
@@ -375,7 +376,7 @@ test("render replaces an old page's stylesheet and leaves its entries alone", as
   assert.match(stdout, /restyled 1 page/)
 
   const fresh = await readFile(page, "utf8")
-  assert.match(fresh, /--accentdot:#3b82f6/)
+  assert.ok(fresh.includes(CSS), "stylesheet is not the current one")
   assert.doesNotMatch(fresh, /old\{\}/)
   assert.match(fresh, /data-kind="command"/)
 })
